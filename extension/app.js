@@ -15,6 +15,65 @@
 
 'use strict';
 
+/**
+ * escapeHtml(str)
+ *
+ * Strict HTML entity escaping to prevent DOM-based XSS when interpolating
+ * untrusted page titles, URLs, and labels into innerHTML.
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * safeUrl(url)
+ *
+ * Validates URLs using standard URL parsing to ensure only safe protocols
+ * (http, https, file, chrome, chrome-extension) are permitted in href.
+ */
+function safeUrl(url) {
+  if (!url) return '#';
+  const trimmed = String(url).trim();
+  try {
+    const parsed = new URL(trimmed);
+    if (['http:', 'https:', 'file:', 'chrome:', 'chrome-extension:'].includes(parsed.protocol)) {
+      return escapeHtml(trimmed);
+    }
+    return '#';
+  } catch {
+    return '#';
+  }
+}
+
+/**
+ * getFaviconUrl(url)
+ *
+ * Uses Chrome's native MV3 favicon API (_favicon) when available to prevent
+ * leaking browsing history to external services and to support offline caching.
+ */
+function getFaviconUrl(url) {
+  if (!url) return '';
+  try {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+      return chrome.runtime.getURL(`/_favicon/?pageUrl=${encodeURIComponent(url)}&size=16`);
+    }
+  } catch {}
+  return '';
+}
+
+// Clean image error fallback compliant with MV3 CSP (no inline onerror)
+document.addEventListener('error', (e) => {
+  if (e.target && e.target.classList && e.target.classList.contains('chip-favicon')) {
+    e.target.style.display = 'none';
+  }
+}, true);
+
 
 /* ----------------------------------------------------------------
    CHROME TABS — Direct API Access
@@ -25,6 +84,9 @@
 
 // All open tabs — populated by fetchOpenTabs()
 let openTabs = [];
+
+// Track user-expanded domain chip sections across dashboard syncs
+const expandedDomains = new Set();
 
 /**
  * fetchOpenTabs()
@@ -54,60 +116,6 @@ async function fetchOpenTabs() {
   }
 }
 
-/**
- * closeTabsByUrls(urls)
- *
- * Closes all open tabs whose hostname matches any of the given URLs.
- * After closing, re-fetches the tab list to keep our state accurate.
- *
- * Special case: file:// URLs are matched exactly (they have no hostname).
- */
-async function closeTabsByUrls(urls) {
-  if (!urls || urls.length === 0) return;
-
-  // Separate file:// URLs (exact match) from regular URLs (hostname match)
-  const targetHostnames = [];
-  const exactUrls = new Set();
-
-  for (const u of urls) {
-    if (u.startsWith('file://')) {
-      exactUrls.add(u);
-    } else {
-      try { targetHostnames.push(new URL(u).hostname); }
-      catch { /* skip unparseable */ }
-    }
-  }
-
-  const allTabs = await chrome.tabs.query({});
-  const toClose = allTabs
-    .filter(tab => {
-      const tabUrl = tab.url || '';
-      if (tabUrl.startsWith('file://') && exactUrls.has(tabUrl)) return true;
-      try {
-        const tabHostname = new URL(tabUrl).hostname;
-        return tabHostname && targetHostnames.includes(tabHostname);
-      } catch { return false; }
-    })
-    .map(tab => tab.id);
-
-  if (toClose.length > 0) await chrome.tabs.remove(toClose);
-  await fetchOpenTabs();
-}
-
-/**
- * closeTabsExact(urls)
- *
- * Closes tabs by exact URL match (not hostname). Used for landing pages
- * so closing "Gmail inbox" doesn't also close individual email threads.
- */
-async function closeTabsExact(urls) {
-  if (!urls || urls.length === 0) return;
-  const urlSet = new Set(urls);
-  const allTabs = await chrome.tabs.query({});
-  const toClose = allTabs.filter(t => urlSet.has(t.url)).map(t => t.id);
-  if (toClose.length > 0) await chrome.tabs.remove(toClose);
-  await fetchOpenTabs();
-}
 
 /**
  * focusTab(url)
@@ -136,8 +144,8 @@ async function focusTab(url) {
 
   if (matches.length === 0) return;
 
-  // Prefer a match in a different window so it actually switches windows
-  const match = matches.find(t => t.windowId !== currentWindow.id) || matches[0];
+  // Prefer a match in the current window so focus stays local
+  const match = matches.find(t => t.windowId === currentWindow.id) || matches[0];
   await chrome.tabs.update(match.id, { active: true });
   await chrome.windows.update(match.windowId, { focused: true });
 }
@@ -150,22 +158,26 @@ async function focusTab(url) {
  * keepOne=false → close all copies.
  */
 async function closeDuplicateTabs(urls, keepOne = true) {
-  const allTabs = await chrome.tabs.query({});
-  const toClose = [];
+  try {
+    const allTabs = await chrome.tabs.query({});
+    const toClose = [];
 
-  for (const url of urls) {
-    const matching = allTabs.filter(t => t.url === url);
-    if (keepOne) {
-      const keep = matching.find(t => t.active) || matching[0];
-      for (const tab of matching) {
-        if (tab.id !== keep.id) toClose.push(tab.id);
+    for (const url of urls) {
+      const matching = allTabs.filter(t => t.url === url);
+      if (keepOne) {
+        const keep = matching.find(t => t.active) || matching[0];
+        for (const tab of matching) {
+          if (tab.id !== keep.id) toClose.push(tab.id);
+        }
+      } else {
+        for (const tab of matching) toClose.push(tab.id);
       }
-    } else {
-      for (const tab of matching) toClose.push(tab.id);
     }
-  }
 
-  if (toClose.length > 0) await chrome.tabs.remove(toClose);
+    if (toClose.length > 0) await chrome.tabs.remove(toClose);
+  } catch (err) {
+    console.warn('[tab-out] Failed to close duplicate tabs:', err);
+  }
   await fetchOpenTabs();
 }
 
@@ -192,8 +204,12 @@ async function closeTabOutDupes() {
     tabOutTabs.find(t => t.active && t.windowId === currentWindow.id) ||
     tabOutTabs.find(t => t.active) ||
     tabOutTabs[0];
-  const toClose = tabOutTabs.filter(t => t.id !== keep.id).map(t => t.id);
-  if (toClose.length > 0) await chrome.tabs.remove(toClose);
+  try {
+    const toClose = tabOutTabs.filter(t => t.id !== keep.id).map(t => t.id);
+    if (toClose.length > 0) await chrome.tabs.remove(toClose);
+  } catch (err) {
+    console.warn('[tab-out] Failed to close extra Tab Out tabs:', err);
+  }
   await fetchOpenTabs();
 }
 
@@ -219,35 +235,60 @@ async function closeTabOutDupes() {
    ]
    ---------------------------------------------------------------- */
 
+// Serialized mutation queue to prevent concurrent read-modify-write race conditions
+let storageQueue = Promise.resolve();
+
+// In-flight animated deferred item IDs to prevent storage.onChanged from clobbering UI transitions
+const animatingDeferredIds = new Set();
+
+function mutateDeferred(mutator) {
+  const resultPromise = storageQueue.then(async () => {
+    const res = await chrome.storage.local.get('deferred');
+    const rawDeferred = res && Array.isArray(res.deferred) ? res.deferred : [];
+    const updated = await mutator([...rawDeferred]);
+    const cleanList = Array.isArray(updated) ? updated : rawDeferred;
+    await chrome.storage.local.set({ deferred: cleanList });
+    return cleanList;
+  }).catch(err => {
+    console.error('[tab-out] Storage mutation error:', err);
+    throw err;
+  });
+  storageQueue = resultPromise.catch(() => {});
+  return resultPromise;
+}
+
 /**
  * saveTabForLater(tab)
  *
  * Saves a single tab to the "Saved for Later" list in chrome.storage.local.
+ * Uses atomic Promise serialization to prevent race conditions.
  * @param {{ url: string, title: string }} tab
  */
 async function saveTabForLater(tab) {
-  const { deferred = [] } = await chrome.storage.local.get('deferred');
-  deferred.push({
-    id:        Date.now().toString(),
-    url:       tab.url,
-    title:     tab.title,
-    savedAt:   new Date().toISOString(),
-    completed: false,
-    dismissed: false,
+  const id = typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Date.now().toString() + '-' + Math.random().toString(36).slice(2);
+  await mutateDeferred(deferred => {
+    deferred.push({
+      id,
+      url:       tab.url,
+      title:     tab.title,
+      savedAt:   new Date().toISOString(),
+      completed: false,
+    });
+    return deferred;
   });
-  await chrome.storage.local.set({ deferred });
 }
 
 /**
  * getSavedTabs()
  *
  * Returns all saved tabs from chrome.storage.local.
- * Filters out dismissed items (those are gone for good).
  * Splits into active (not completed) and archived (completed).
  */
 async function getSavedTabs() {
-  const { deferred = [] } = await chrome.storage.local.get('deferred');
-  const visible = deferred.filter(t => !t.dismissed);
+  const res = await chrome.storage.local.get('deferred');
+  const visible = res && Array.isArray(res.deferred) ? res.deferred : [];
   return {
     active:   visible.filter(t => !t.completed),
     archived: visible.filter(t => t.completed),
@@ -260,27 +301,52 @@ async function getSavedTabs() {
  * Marks a saved tab as completed (checked off). It moves to the archive.
  */
 async function checkOffSavedTab(id) {
-  const { deferred = [] } = await chrome.storage.local.get('deferred');
-  const tab = deferred.find(t => t.id === id);
-  if (tab) {
-    tab.completed = true;
-    tab.completedAt = new Date().toISOString();
-    await chrome.storage.local.set({ deferred });
-  }
+  await mutateDeferred(deferred => {
+    const tab = deferred.find(t => String(t.id) === String(id));
+    if (tab) {
+      tab.completed = true;
+      tab.completedAt = new Date().toISOString();
+    }
+    return deferred;
+  });
 }
 
 /**
  * dismissSavedTab(id)
  *
- * Marks a saved tab as dismissed (removed from all lists).
+ * Removes a saved tab permanently from chrome.storage.local.
  */
 async function dismissSavedTab(id) {
-  const { deferred = [] } = await chrome.storage.local.get('deferred');
-  const tab = deferred.find(t => t.id === id);
-  if (tab) {
-    tab.dismissed = true;
-    await chrome.storage.local.set({ deferred });
-  }
+  await mutateDeferred(deferred => {
+    return deferred.filter(t => String(t.id) !== String(id));
+  });
+}
+
+/**
+ * unarchiveSavedTab(id)
+ *
+ * Restores an archived tab back to active checklist (completed = false).
+ */
+async function unarchiveSavedTab(id) {
+  await mutateDeferred(deferred => {
+    const tab = deferred.find(t => String(t.id) === String(id));
+    if (tab) {
+      tab.completed = false;
+      delete tab.completedAt;
+    }
+    return deferred;
+  });
+}
+
+/**
+ * deleteSavedTab(id)
+ *
+ * Permanently removes an archived tab from chrome.storage.local.
+ */
+async function deleteSavedTab(id) {
+  await mutateDeferred(deferred => {
+    return deferred.filter(t => String(t.id) !== String(id));
+  });
 }
 
 
@@ -289,145 +355,19 @@ async function dismissSavedTab(id) {
    ---------------------------------------------------------------- */
 
 /**
- * playCloseSound()
- *
- * Plays a clean "swoosh" sound when tabs are closed.
- * Built entirely with the Web Audio API — no sound files needed.
- * A filtered noise sweep that descends in pitch, like air moving.
- */
-function playCloseSound() {
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const t = ctx.currentTime;
-
-    // Swoosh: shaped white noise through a sweeping bandpass filter
-    const duration = 0.25;
-    const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-
-    // Generate noise with a natural envelope (quick attack, smooth decay)
-    for (let i = 0; i < data.length; i++) {
-      const pos = i / data.length;
-      // Envelope: ramps up fast in first 10%, then fades out smoothly
-      const env = pos < 0.1 ? pos / 0.1 : Math.pow(1 - (pos - 0.1) / 0.9, 1.5);
-      data[i] = (Math.random() * 2 - 1) * env;
-    }
-
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-
-    // Bandpass filter sweeps from high to low — creates the "swoosh" character
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.Q.value = 2.0;
-    filter.frequency.setValueAtTime(4000, t);
-    filter.frequency.exponentialRampToValueAtTime(400, t + duration);
-
-    // Volume
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.15, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
-
-    source.connect(filter).connect(gain).connect(ctx.destination);
-    source.start(t);
-
-    setTimeout(() => ctx.close(), 500);
-  } catch {
-    // Audio not supported — fail silently
-  }
-}
-
-/**
- * shootConfetti(x, y)
- *
- * Shoots a burst of colorful confetti particles from the given screen
- * coordinates (typically the center of a card being closed).
- * Pure CSS + JS, no libraries.
- */
-function shootConfetti(x, y) {
-  const colors = [
-    '#c8713a', // amber
-    '#e8a070', // amber light
-    '#5a7a62', // sage
-    '#8aaa92', // sage light
-    '#5a6b7a', // slate
-    '#8a9baa', // slate light
-    '#d4b896', // warm paper
-    '#b35a5a', // rose
-  ];
-
-  const particleCount = 17;
-
-  for (let i = 0; i < particleCount; i++) {
-    const el = document.createElement('div');
-
-    const isCircle = Math.random() > 0.5;
-    const size = 5 + Math.random() * 6; // 5–11px
-    const color = colors[Math.floor(Math.random() * colors.length)];
-
-    el.style.cssText = `
-      position: fixed;
-      left: ${x}px;
-      top: ${y}px;
-      width: ${size}px;
-      height: ${size}px;
-      background: ${color};
-      border-radius: ${isCircle ? '50%' : '2px'};
-      pointer-events: none;
-      z-index: 9999;
-      transform: translate(-50%, -50%);
-      opacity: 1;
-    `;
-    document.body.appendChild(el);
-
-    // Physics: random angle and speed for the outward burst
-    const angle   = Math.random() * Math.PI * 2;
-    const speed   = 60 + Math.random() * 120;
-    const vx      = Math.cos(angle) * speed;
-    const vy      = Math.sin(angle) * speed - 80; // bias upward
-    const gravity = 200;
-
-    const startTime = performance.now();
-    const duration  = 700 + Math.random() * 200; // 700–900ms
-
-    function frame(now) {
-      const elapsed  = (now - startTime) / 1000;
-      const progress = elapsed / (duration / 1000);
-
-      if (progress >= 1) { el.remove(); return; }
-
-      const px = vx * elapsed;
-      const py = vy * elapsed + 0.5 * gravity * elapsed * elapsed;
-      const opacity = progress < 0.5 ? 1 : 1 - (progress - 0.5) * 2;
-      const rotate  = elapsed * 200 * (isCircle ? 0 : 1);
-
-      el.style.transform = `translate(calc(-50% + ${px}px), calc(-50% + ${py}px)) rotate(${rotate}deg)`;
-      el.style.opacity = opacity;
-
-      requestAnimationFrame(frame);
-    }
-
-    requestAnimationFrame(frame);
-  }
-}
-
-/**
  * animateCardOut(card)
  *
- * Smoothly removes a mission card: fade + scale down, then confetti.
- * After the animation, checks if the grid is now empty.
+ * Smoothly removes a mission card with a subtle opacity fade.
+ * Adheres strictly to the stillness principle of Vercel Brand Guidelines.
  */
 function animateCardOut(card) {
   if (!card) return;
-
-  const rect = card.getBoundingClientRect();
-  shootConfetti(rect.left + rect.width / 2, rect.top + rect.height / 2);
 
   card.classList.add('closing');
   setTimeout(() => {
     card.remove();
     checkAndShowEmptyState();
-  }, 300);
+  }, 200);
 }
 
 /**
@@ -440,6 +380,72 @@ function showToast(message) {
   document.getElementById('toastText').textContent = message;
   toast.classList.add('visible');
   setTimeout(() => toast.classList.remove('visible'), 2500);
+}
+
+/**
+ * syncCardState(card)
+ *
+ * Reconciles the visual badge, close buttons, duplicate indicators, and in-memory
+ * domainGroups for a domain card when tabs are incrementally removed or deferred.
+ */
+function syncCardState(card) {
+  if (!card) return;
+  const chips = card.querySelectorAll('.page-chip');
+  const domain = card.dataset.domain;
+
+  if (chips.length === 0) {
+    animateCardOut(card);
+    if (domain) {
+      domainGroups = domainGroups.filter(g => g.domain !== domain);
+    }
+    return;
+  }
+
+  // Count remaining tabs across all chips in this card
+  let remainingCount = 0;
+  let remainingDupes = 0;
+  chips.forEach(c => {
+    const cnt = parseInt(c.dataset.tabCount || '1', 10);
+    remainingCount += cnt;
+    if (cnt > 1) remainingDupes += (cnt - 1);
+  });
+
+  // Update .open-tabs-badge
+  const mainBadge = card.querySelector('.open-tabs-badge:not(.dupe-badge)');
+  if (mainBadge) {
+    mainBadge.textContent = `${remainingCount} tab${remainingCount !== 1 ? 's' : ''} open`;
+  }
+
+  // Update dupe-badge
+  const dupeBadge = card.querySelector('.open-tabs-badge.dupe-badge');
+  if (dupeBadge) {
+    if (remainingDupes > 0) {
+      dupeBadge.textContent = `${remainingDupes} duplicate${remainingDupes !== 1 ? 's' : ''}`;
+    } else {
+      dupeBadge.remove();
+      card.classList.remove('has-amber-bar');
+    }
+  }
+
+  // Update close-domain-tabs button
+  const closeBtn = card.querySelector('.action-btn.close-tabs');
+  if (closeBtn) {
+    if (remainingCount > 1) {
+      closeBtn.innerHTML = `${ICONS.close} Close ${remainingCount} tabs`;
+    } else {
+      closeBtn.remove();
+    }
+  }
+
+  // Update dedup button
+  const dedupBtn = card.querySelector('.action-btn[data-action="dedup-keep-one"]');
+  if (dedupBtn) {
+    if (remainingDupes > 0) {
+      dedupBtn.textContent = `Close ${remainingDupes} duplicate${remainingDupes !== 1 ? 's' : ''}`;
+    } else {
+      dedupBtn.remove();
+    }
+  }
 }
 
 /**
@@ -456,18 +462,55 @@ function checkAndShowEmptyState() {
 
   missionsEl.innerHTML = `
     <div class="missions-empty-state">
-      <div class="empty-checkmark">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-        </svg>
-      </div>
-      <div class="empty-title">Inbox zero, but for tabs.</div>
-      <div class="empty-subtitle">You're free.</div>
+      <div class="empty-title">All tabs closed</div>
+      <div class="empty-subtitle">Clean workspace</div>
     </div>
   `;
 
   const countEl = document.getElementById('openTabsSectionCount');
   if (countEl) countEl.textContent = '0 domains';
+
+  const headerActionsEl = document.getElementById('openTabsHeaderActions');
+  if (headerActionsEl) headerActionsEl.innerHTML = '';
+}
+
+/**
+ * updateHeaderAndStats()
+ *
+ * Keeps header counts, hero subtitle, section domain counts, and header actions
+ * synchronized across all incremental tab actions without requiring a full re-render.
+ */
+function updateHeaderAndStats() {
+  const realTabs = getRealTabs();
+  const statTabs = document.getElementById('statTabs');
+  if (statTabs) statTabs.textContent = realTabs.length;
+
+  const heroSub = document.getElementById('heroSubtitle');
+  if (heroSub) {
+    const windowIds = new Set(realTabs.map(t => t.windowId));
+    const winCount = windowIds.size || 1;
+    heroSub.textContent = `${realTabs.length} tab${realTabs.length !== 1 ? 's' : ''} across ${winCount} window${winCount !== 1 ? 's' : ''}`;
+  }
+
+  const missionsEl = document.getElementById('openTabsMissions');
+  const countEl = document.getElementById('openTabsSectionCount');
+  if (missionsEl && countEl) {
+    const visibleCards = missionsEl.querySelectorAll('.mission-card:not(.closing)').length;
+    countEl.textContent = `${visibleCards} domain${visibleCards !== 1 ? 's' : ''}`;
+  }
+
+  const headerActionsEl = document.getElementById('openTabsHeaderActions');
+  if (headerActionsEl) {
+    if (realTabs.length > 1) {
+      headerActionsEl.innerHTML = `<button class="action-btn close-tabs close-all-btn" data-action="close-all-open-tabs">${ICONS.close} Close all ${realTabs.length} tabs</button>`;
+    } else {
+      headerActionsEl.innerHTML = '';
+    }
+  }
+
+  if (realTabs.length === 0) {
+    checkAndShowEmptyState();
+  }
 }
 
 /**
@@ -479,6 +522,7 @@ function checkAndShowEmptyState() {
 function timeAgo(dateStr) {
   if (!dateStr) return '';
   const then = new Date(dateStr);
+  if (isNaN(then.getTime())) return '';
   const now  = new Date();
   const diffMins  = Math.floor((now - then) / 60000);
   const diffHours = Math.floor((now - then) / 3600000);
@@ -491,15 +535,6 @@ function timeAgo(dateStr) {
   return diffDays + ' days ago';
 }
 
-/**
- * getGreeting() — "Good morning / afternoon / evening"
- */
-function getGreeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
 
 /**
  * getDateDisplay() — "Friday, April 4, 2026"
@@ -618,8 +653,8 @@ function stripTitleNoise(title) {
   // Strip inline counts like "Inbox (16,359)"
   title = title.replace(/\s*\([\d,]+\+?\)\s*/g, ' ');
   // Strip email addresses (privacy + cleaner display)
-  title = title.replace(/\s*[\-\u2010-\u2015]\s*[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, '');
-  title = title.replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, '');
+  title = title.replace(/\s*[-\u2010-\u2015]\s*[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '');
+  title = title.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '');
   // Clean X/Twitter format
   title = title.replace(/\s+on X:\s*/, ': ');
   title = title.replace(/\s*\/\s*X\s*$/, '');
@@ -671,7 +706,7 @@ function smartTitle(title, url) {
       const [owner, repo, ...rest] = parts;
       if (rest[0] === 'issues' && rest[1]) return `${owner}/${repo} Issue #${rest[1]}`;
       if (rest[0] === 'pull'   && rest[1]) return `${owner}/${repo} PR #${rest[1]}`;
-      if (rest[0] === 'blob' || rest[0] === 'tree') return `${owner}/${repo} — ${rest.slice(2).join('/')}`;
+      if (rest[0] === 'blob' || rest[0] === 'tree') return `${owner}/${repo} / ${rest.slice(2).join('/')}`;
       if (titleIsUrl) return `${owner}/${repo}`;
     }
   }
@@ -696,10 +731,7 @@ function smartTitle(title, url) {
    SVG ICON STRINGS
    ---------------------------------------------------------------- */
 const ICONS = {
-  tabs:    `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8.25V18a2.25 2.25 0 0 0 2.25 2.25h13.5A2.25 2.25 0 0 0 21 18V8.25m-18 0V6a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 6v2.25m-18 0h18" /></svg>`,
-  close:   `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>`,
-  archive: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" /></svg>`,
-  focus:   `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 19.5 15-15m0 0H8.25m11.25 0v11.25" /></svg>`,
+  close: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>`,
 };
 
 
@@ -757,36 +789,46 @@ function checkTabOutDupes() {
    OVERFLOW CHIPS ("+N more" expand button in domain cards)
    ---------------------------------------------------------------- */
 
-function buildOverflowChips(hiddenTabs, urlCounts = {}) {
+function buildOverflowChips(hiddenTabs, urlCounts = {}, isExpanded = false, domain = '') {
   const hiddenChips = hiddenTabs.map(tab => {
-    const label    = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), '');
-    const count    = urlCounts[tab.url] || 1;
-    const dupeTag  = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
-    const chipClass = count > 1 ? ' chip-has-dupes' : '';
-    const safeUrl   = (tab.url || '').replace(/"/g, '&quot;');
-    const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}
+    const rawLabel  = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), domain);
+    let portPrefix  = '';
+    try {
+      const parsed = new URL(tab.url);
+      if (parsed.hostname === 'localhost' && parsed.port) {
+        portPrefix = `<code class="chip-port vbg-mono">${escapeHtml(parsed.port)}</code>`;
+      }
+    } catch {}
+    const count     = urlCounts[tab.url] || 1;
+    const dupeTag   = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
+    const validUrl  = safeUrl(tab.url);
+    const safeTitle = escapeHtml(rawLabel);
+    const faviconUrl = getFaviconUrl(tab.url);
+    return `<div class="page-chip" data-tab-count="${count}" data-tab-url="${validUrl}">
+      <button type="button" class="chip-title-btn" data-action="focus-tab" data-tab-url="${validUrl}" title="${safeTitle}" aria-label="${safeTitle}">
+        ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="">` : ''}
+        <span class="chip-text">${portPrefix}${escapeHtml(rawLabel)}</span>${dupeTag}
+      </button>
       <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+        <button type="button" class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${validUrl}" data-tab-title="${safeTitle}" title="Save for later" aria-label="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+        <button type="button" class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${validUrl}" title="Close this tab" aria-label="Close this tab">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
     </div>`;
   }).join('');
 
+  if (isExpanded) {
+    return `<div class="page-chips-overflow" style="display:contents">${hiddenChips}</div>`;
+  }
+
   return `
     <div class="page-chips-overflow" style="display:none">${hiddenChips}</div>
-    <div class="page-chip page-chip-overflow clickable" data-action="expand-chips">
-      <span class="chip-text">+${hiddenTabs.length} more</span>
-    </div>`;
+    <button type="button" class="page-chip-overflow" data-action="expand-chips" aria-label="Show ${hiddenTabs.length} more tabs">
+      +${hiddenTabs.length} more
+    </button>`;
 }
 
 
@@ -797,29 +839,34 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
 /**
  * renderDomainCard(group, groupIndex)
  *
- * Builds the HTML for one domain group card.
- * group = { domain: string, tabs: [{ url, title, id, windowId, active }] }
+ * Builds the HTML string for one domain card.
+ * Handles tab count badges, duplicate badges, page chips,
+ * and card action buttons.
  */
 function renderDomainCard(group) {
-  const tabs      = group.tabs || [];
-  const tabCount  = tabs.length;
-  const isLanding = group.domain === '__landing-pages__';
-  const stableId  = 'domain-' + group.domain.replace(/[^a-z0-9]/g, '-');
+  const tabs       = group.tabs;
+  const isLanding  = group.domain === '__landing-pages__';
+  const tabCount   = tabs.length;
+  const isExpanded = expandedDomains.has(group.domain);
 
-  // Count duplicates (exact URL match)
+  // Count occurrences of each URL to detect exact duplicates
   const urlCounts = {};
-  for (const tab of tabs) urlCounts[tab.url] = (urlCounts[tab.url] || 0) + 1;
-  const dupeUrls   = Object.entries(urlCounts).filter(([, c]) => c > 1);
-  const hasDupes   = dupeUrls.length > 0;
-  const totalExtras = dupeUrls.reduce((s, [, c]) => s + c - 1, 0);
+  for (const tab of tabs) {
+    urlCounts[tab.url] = (urlCounts[tab.url] || 0) + 1;
+  }
 
-  const tabBadge = `<span class="open-tabs-badge">
-    ${ICONS.tabs}
-    ${tabCount} tab${tabCount !== 1 ? 's' : ''} open
-  </span>`;
+  // Find all duplicates (URLs appearing more than once)
+  const dupeUrls = Object.entries(urlCounts).filter(([, count]) => count > 1);
+  const hasDupes = dupeUrls.length > 0;
+  const totalExtras = dupeUrls.reduce((sum, [, count]) => sum + (count - 1), 0);
+
+  // Badges: quiet tabular text label
+  const tabBadge = tabCount > 0
+    ? `<span class="open-tabs-badge">${tabCount} tab${tabCount !== 1 ? 's' : ''} open</span>`
+    : '';
 
   const dupeBadge = hasDupes
-    ? `<span class="open-tabs-badge" style="color:var(--accent-amber);background:rgba(200,113,58,0.08);">
+    ? `<span class="open-tabs-badge dupe-badge">
         ${totalExtras} duplicate${totalExtras !== 1 ? 's' : ''}
       </span>`
     : '';
@@ -835,39 +882,44 @@ function renderDomainCard(group) {
   const extraCount  = uniqueTabs.length - visibleTabs.length;
 
   const pageChips = visibleTabs.map(tab => {
-    let label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), group.domain);
-    // For localhost tabs, prepend port number so you can tell projects apart
+    let rawLabel = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), group.domain);
+    let portPrefix = '';
+    // For localhost tabs, prepend port number with monospace styling so you can tell projects apart
     try {
       const parsed = new URL(tab.url);
-      if (parsed.hostname === 'localhost' && parsed.port) label = `${parsed.port} ${label}`;
+      if (parsed.hostname === 'localhost' && parsed.port) {
+        portPrefix = `<code class="chip-port vbg-mono">${escapeHtml(parsed.port)}</code>`;
+      }
     } catch {}
-    const count    = urlCounts[tab.url];
-    const dupeTag  = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
-    const chipClass = count > 1 ? ' chip-has-dupes' : '';
-    const safeUrl   = (tab.url || '').replace(/"/g, '&quot;');
-    const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}
+    const count     = urlCounts[tab.url] || 1;
+    const dupeTag   = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
+    const validUrl  = safeUrl(tab.url);
+    const safeTitle = escapeHtml(rawLabel);
+    const faviconUrl = getFaviconUrl(tab.url);
+    return `<div class="page-chip" data-tab-count="${count}" data-tab-url="${validUrl}">
+      <button type="button" class="chip-title-btn" data-action="focus-tab" data-tab-url="${validUrl}" title="${safeTitle}" aria-label="${safeTitle}">
+        ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="">` : ''}
+        <span class="chip-text">${portPrefix}${escapeHtml(rawLabel)}</span>${dupeTag}
+      </button>
       <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
+        <button type="button" class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${validUrl}" data-tab-title="${safeTitle}" title="Save for later" aria-label="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+        <button type="button" class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${validUrl}" title="Close this tab" aria-label="Close this tab">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
     </div>`;
-  }).join('') + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(8), urlCounts) : '');
+  }).join('') + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(8), urlCounts, isExpanded, group.domain) : '');
 
-  let actionsHtml = `
-    <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain-id="${stableId}">
-      ${ICONS.close}
-      Close all ${tabCount} tab${tabCount !== 1 ? 's' : ''}
-    </button>`;
+  let actionsHtml = '';
+  if (tabCount > 1) {
+    actionsHtml += `
+      <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain="${escapeHtml(group.domain)}">
+        ${ICONS.close}
+        Close ${tabCount} tabs
+      </button>`;
+  }
 
   if (hasDupes) {
     const dupeUrlsEncoded = dupeUrls.map(([url]) => encodeURIComponent(url)).join(',');
@@ -877,21 +929,18 @@ function renderDomainCard(group) {
       </button>`;
   }
 
+  const groupHeading = isLanding ? 'Homepages' : escapeHtml(group.label || friendlyDomain(group.domain));
+
   return `
-    <div class="mission-card domain-card ${hasDupes ? 'has-amber-bar' : 'has-neutral-bar'}" data-domain-id="${stableId}">
-      <div class="status-bar"></div>
+    <div class="mission-card ${hasDupes ? 'has-amber-bar' : ''}" data-domain="${escapeHtml(group.domain)}">
       <div class="mission-content">
         <div class="mission-top">
-          <span class="mission-name">${isLanding ? 'Homepages' : (group.label || friendlyDomain(group.domain))}</span>
+          <h3 class="mission-name">${groupHeading}</h3>
           ${tabBadge}
           ${dupeBadge}
         </div>
         <div class="mission-pages">${pageChips}</div>
-        <div class="actions">${actionsHtml}</div>
-      </div>
-      <div class="mission-meta">
-        <div class="mission-page-count">${tabCount}</div>
-        <div class="mission-page-label">tabs</div>
+        ${actionsHtml ? `<div class="actions">${actionsHtml}</div>` : ''}
       </div>
     </div>`;
 }
@@ -922,14 +971,6 @@ async function renderDeferredColumn() {
   try {
     const { active, archived } = await getSavedTabs();
 
-    // Hide the entire column if there's nothing to show
-    if (active.length === 0 && archived.length === 0) {
-      column.style.display = 'none';
-      return;
-    }
-
-    column.style.display = 'block';
-
     // Render active checklist items
     if (active.length > 0) {
       countEl.textContent = `${active.length} item${active.length !== 1 ? 's' : ''}`;
@@ -945,7 +986,18 @@ async function renderDeferredColumn() {
     // Render archive section
     if (archived.length > 0) {
       archiveCountEl.textContent = `(${archived.length})`;
-      archiveList.innerHTML = archived.map(item => renderArchiveItem(item)).join('');
+      const searchInput = document.getElementById('archiveSearch');
+      const q = searchInput ? searchInput.value.trim().toLowerCase() : '';
+      if (q.length >= 2) {
+        const results = archived.filter(item =>
+          (item.title || '').toLowerCase().includes(q) ||
+          (item.url   || '').toLowerCase().includes(q)
+        );
+        archiveList.innerHTML = results.map(item => renderArchiveItem(item)).join('')
+          || '<div class="archive-no-results">No results</div>';
+      } else {
+        archiveList.innerHTML = archived.map(item => renderArchiveItem(item)).join('');
+      }
       archiveEl.style.display = 'block';
     } else {
       archiveEl.style.display = 'none';
@@ -953,7 +1005,7 @@ async function renderDeferredColumn() {
 
   } catch (err) {
     console.warn('[tab-out] Could not load saved tabs:', err);
-    column.style.display = 'none';
+    if (empty) empty.style.display = 'block';
   }
 }
 
@@ -966,22 +1018,24 @@ async function renderDeferredColumn() {
 function renderDeferredItem(item) {
   let domain = '';
   try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch {}
-  const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
+  const faviconUrl = getFaviconUrl(item.url);
   const ago = timeAgo(item.savedAt);
+  const displayTitle = escapeHtml(item.title || item.url || '');
+  const validUrl = safeUrl(item.url);
 
   return `
-    <div class="deferred-item" data-deferred-id="${item.id}">
-      <input type="checkbox" class="deferred-checkbox" data-action="check-deferred" data-deferred-id="${item.id}">
+    <div class="deferred-item" data-deferred-id="${escapeHtml(item.id)}">
+      <input type="checkbox" class="deferred-checkbox" data-action="check-deferred" data-deferred-id="${escapeHtml(item.id)}" aria-label="Mark completed">
       <div class="deferred-info">
-        <a href="${item.url}" target="_blank" rel="noopener" class="deferred-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-          <img src="${faviconUrl}" alt="" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px" onerror="this.style.display='none'">${item.title || item.url}
+        <a href="${validUrl}" target="_blank" rel="noopener" class="deferred-title" title="${displayTitle}">
+          ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="">` : ''}<span>${displayTitle}</span>
         </a>
         <div class="deferred-meta">
-          <span>${domain}</span>
-          <span>${ago}</span>
+          <span>${escapeHtml(domain)}</span>
+          <span>${escapeHtml(ago)}</span>
         </div>
       </div>
-      <button class="deferred-dismiss" data-action="dismiss-deferred" data-deferred-id="${item.id}" title="Dismiss">
+      <button class="deferred-dismiss" data-action="dismiss-deferred" data-deferred-id="${escapeHtml(item.id)}" title="Dismiss" aria-label="Dismiss">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
       </button>
     </div>`;
@@ -990,16 +1044,34 @@ function renderDeferredItem(item) {
 /**
  * renderArchiveItem(item)
  *
- * Builds HTML for one completed/archived item (simpler: just title + date).
+ * Builds HTML for one completed/archived item with domain favicon,
+ * title link, time ago, restore button, and delete button.
  */
 function renderArchiveItem(item) {
   const ago = item.completedAt ? timeAgo(item.completedAt) : timeAgo(item.savedAt);
+  let domain = '';
+  try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch {}
+  const faviconUrl = getFaviconUrl(item.url);
+  const displayTitle = escapeHtml(item.title || item.url || '');
+  const validUrl = safeUrl(item.url);
+
   return `
-    <div class="archive-item">
-      <a href="${item.url}" target="_blank" rel="noopener" class="archive-item-title" title="${(item.title || '').replace(/"/g, '&quot;')}">
-        ${item.title || item.url}
-      </a>
-      <span class="archive-item-date">${ago}</span>
+    <div class="archive-item" data-archive-id="${escapeHtml(item.id)}">
+      <div class="archive-item-main">
+        <a href="${validUrl}" target="_blank" rel="noopener" class="archive-item-title" title="${displayTitle}">
+          ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="">` : ''}
+          <span class="archive-item-text">${displayTitle}</span>
+        </a>
+        <span class="archive-item-date">${escapeHtml(domain ? domain + ' · ' + ago : ago)}</span>
+      </div>
+      <div class="archive-item-actions">
+        <button type="button" class="archive-action-btn unarchive" data-action="unarchive-saved-tab" data-archive-id="${escapeHtml(item.id)}" title="Restore to Saved for later" aria-label="Restore to Saved for later">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" /></svg>
+        </button>
+        <button type="button" class="archive-action-btn delete" data-action="delete-archived-tab" data-archive-id="${escapeHtml(item.id)}" title="Delete permanently" aria-label="Delete permanently">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+        </button>
+      </div>
     </div>`;
 }
 
@@ -1023,12 +1095,19 @@ async function renderStaticDashboard() {
   // --- Header ---
   const greetingEl = document.getElementById('greeting');
   const dateEl     = document.getElementById('dateDisplay');
-  if (greetingEl) greetingEl.textContent = getGreeting();
+  if (greetingEl) greetingEl.textContent = 'Active tabs';
   if (dateEl)     dateEl.textContent     = getDateDisplay();
 
   // --- Fetch tabs ---
   await fetchOpenTabs();
   const realTabs = getRealTabs();
+
+  const heroSub = document.getElementById('heroSubtitle');
+  if (heroSub) {
+    const windowIds = new Set(realTabs.map(t => t.windowId));
+    const winCount = windowIds.size || 1;
+    heroSub.textContent = `${realTabs.length} tab${realTabs.length !== 1 ? 's' : ''} across ${winCount} window${winCount !== 1 ? 's' : ''}`;
+  }
 
   // --- Group tabs by domain ---
   // Landing pages (Gmail inbox, Twitter home, etc.) get their own special group
@@ -1036,10 +1115,11 @@ async function renderStaticDashboard() {
   const LANDING_PAGE_PATTERNS = [
     { hostname: 'mail.google.com', test: (p, h) =>
         !h.includes('#inbox/') && !h.includes('#sent/') && !h.includes('#search/') },
-    { hostname: 'x.com',               pathExact: ['/home'] },
-    { hostname: 'www.linkedin.com',    pathExact: ['/'] },
-    { hostname: 'github.com',          pathExact: ['/'] },
-    { hostname: 'www.youtube.com',     pathExact: ['/'] },
+    { hostname: 'x.com',            pathExact: ['/home'] },
+    { hostname: 'twitter.com',      pathExact: ['/home'] },
+    { hostname: 'linkedin.com',     pathExact: ['/'] },
+    { hostname: 'github.com',       pathExact: ['/'] },
+    { hostname: 'youtube.com',      pathExact: ['/'] },
     // Merge personal patterns from config.local.js (if it exists)
     ...(typeof LOCAL_LANDING_PAGE_PATTERNS !== 'undefined' ? LOCAL_LANDING_PAGE_PATTERNS : []),
   ];
@@ -1047,10 +1127,11 @@ async function renderStaticDashboard() {
   function isLandingPage(url) {
     try {
       const parsed = new URL(url);
+      const cleanHost = parsed.hostname.replace(/^www\./, '');
       return LANDING_PAGE_PATTERNS.some(p => {
-        // Support both exact hostname and suffix matching (for wildcard subdomains)
+        const targetHost = (p.hostname || '').replace(/^www\./, '');
         const hostnameMatch = p.hostname
-          ? parsed.hostname === p.hostname
+          ? cleanHost === targetHost
           : p.hostnameEndsWith
             ? parsed.hostname.endsWith(p.hostnameEndsWith)
             : false;
@@ -1148,28 +1229,42 @@ async function renderStaticDashboard() {
   const openTabsSectionCount = document.getElementById('openTabsSectionCount');
   const openTabsSectionTitle = document.getElementById('openTabsSectionTitle');
 
-  if (domainGroups.length > 0 && openTabsSection) {
-    if (openTabsSectionTitle) openTabsSectionTitle.textContent = 'Open tabs';
-    openTabsSectionCount.innerHTML = `${domainGroups.length} domain${domainGroups.length !== 1 ? 's' : ''} &nbsp;&middot;&nbsp; <button class="action-btn close-tabs" data-action="close-all-open-tabs" style="font-size:11px;padding:3px 10px;">${ICONS.close} Close all ${realTabs.length} tabs</button>`;
-    openTabsMissionsEl.innerHTML = domainGroups.map(g => renderDomainCard(g)).join('');
+  if (openTabsSection) {
+    if (domainGroups.length > 0) {
+      if (openTabsSectionTitle) openTabsSectionTitle.textContent = 'Open tabs';
+      if (openTabsSectionCount) openTabsSectionCount.textContent = `${domainGroups.length} domain${domainGroups.length !== 1 ? 's' : ''}`;
+      const openTabsHeaderActions = document.getElementById('openTabsHeaderActions');
+      if (openTabsHeaderActions) {
+        if (realTabs.length > 1) {
+          openTabsHeaderActions.innerHTML = `<button class="action-btn close-tabs close-all-btn" data-action="close-all-open-tabs">${ICONS.close} Close all ${realTabs.length} tabs</button>`;
+        } else {
+          openTabsHeaderActions.innerHTML = '';
+        }
+      }
+      if (openTabsMissionsEl) openTabsMissionsEl.innerHTML = domainGroups.map(g => renderDomainCard(g)).join('');
+    } else {
+      if (openTabsSectionTitle) openTabsSectionTitle.textContent = 'Open tabs';
+      if (openTabsSectionCount) openTabsSectionCount.textContent = '0 domains';
+      const openTabsHeaderActions = document.getElementById('openTabsHeaderActions');
+      if (openTabsHeaderActions) openTabsHeaderActions.innerHTML = '';
+      if (openTabsMissionsEl) {
+        openTabsMissionsEl.innerHTML = `
+          <div class="missions-empty-state">
+            <div class="empty-title">All tabs closed</div>
+            <div class="empty-subtitle">Clean workspace</div>
+          </div>
+        `;
+      }
+    }
     openTabsSection.style.display = 'block';
-  } else if (openTabsSection) {
-    openTabsSection.style.display = 'none';
   }
 
   // --- Footer stats ---
   const statTabs = document.getElementById('statTabs');
-  if (statTabs) statTabs.textContent = openTabs.length;
+  if (statTabs) statTabs.textContent = realTabs.length;
 
   // --- Check for duplicate Tab Out tabs ---
   checkTabOutDupes();
-
-  // --- Render "Saved for Later" column ---
-  await renderDeferredColumn();
-}
-
-async function renderDashboard() {
-  await renderStaticDashboard();
 }
 
 
@@ -1182,16 +1277,15 @@ async function renderDashboard() {
    ---------------------------------------------------------------- */
 
 document.addEventListener('click', async (e) => {
-  // Walk up the DOM to find the nearest element with data-action
-  const actionEl = e.target.closest('[data-action]');
+  // Walk up the DOM to find the nearest element with data-action or #archiveToggle
+  const actionEl = e.target.closest('[data-action], #archiveToggle');
   if (!actionEl) return;
 
-  const action = actionEl.dataset.action;
+  const action = actionEl.dataset.action || (actionEl.id === 'archiveToggle' ? 'toggle-archive' : '');
 
   // ---- Close duplicate Tab Out tabs ----
   if (action === 'close-tabout-dupes') {
     await closeTabOutDupes();
-    playCloseSound();
     const banner = document.getElementById('tabOutDupeBanner');
     if (banner) {
       banner.style.transition = 'opacity 0.4s';
@@ -1206,6 +1300,9 @@ document.addEventListener('click', async (e) => {
 
   // ---- Expand overflow chips ("+N more") ----
   if (action === 'expand-chips') {
+    const card = actionEl.closest('.mission-card');
+    const domain = card?.dataset.domain;
+    if (domain) expandedDomains.add(domain);
     const overflowContainer = actionEl.parentElement.querySelector('.page-chips-overflow');
     if (overflowContainer) {
       overflowContainer.style.display = 'contents';
@@ -1227,38 +1324,59 @@ document.addEventListener('click', async (e) => {
     const tabUrl = actionEl.dataset.tabUrl;
     if (!tabUrl) return;
 
-    // Close the tab in Chrome directly
-    const allTabs = await chrome.tabs.query({});
-    const match   = allTabs.find(t => t.url === tabUrl);
-    if (match) await chrome.tabs.remove(match.id);
+    // Close one tab matching this URL in Chrome (preferring current window)
+    let removedId = null;
+    try {
+      const allTabs = await chrome.tabs.query({});
+      const currentWindow = await chrome.windows.getCurrent();
+      const match = allTabs.find(t => t.url === tabUrl && t.windowId === currentWindow.id)
+                 || allTabs.find(t => t.url === tabUrl);
+      if (match) {
+        removedId = match.id;
+        await chrome.tabs.remove(match.id);
+      }
+    } catch (err) {
+      console.warn('[tab-out] Failed to close tab:', err);
+    }
     await fetchOpenTabs();
 
-    playCloseSound();
-
-    // Animate the chip row out
-    const chip = actionEl.closest('.page-chip');
-    if (chip) {
-      const rect = chip.getBoundingClientRect();
-      shootConfetti(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      chip.style.transition = 'opacity 0.2s, transform 0.2s';
-      chip.style.opacity    = '0';
-      chip.style.transform  = 'scale(0.8)';
-      setTimeout(() => {
-        chip.remove();
-        // If the card now has no tabs, remove it too
-        const parentCard = document.querySelector('.mission-card:has(.mission-pages:empty)');
-        if (parentCard) animateCardOut(parentCard);
-        document.querySelectorAll('.mission-card').forEach(c => {
-          if (c.querySelectorAll('.page-chip[data-action="focus-tab"]').length === 0) {
-            animateCardOut(c);
-          }
-        });
-      }, 200);
+    // Reconcile in-memory domainGroups
+    if (removedId) {
+      for (const g of domainGroups) {
+        g.tabs = g.tabs.filter(t => t.id !== removedId);
+      }
+      domainGroups = domainGroups.filter(g => g.tabs.length > 0);
     }
 
-    // Update footer
-    const statTabs = document.getElementById('statTabs');
-    if (statTabs) statTabs.textContent = openTabs.length;
+    const chip = actionEl.closest('.page-chip');
+    const parentCard = chip ? chip.closest('.mission-card') : null;
+    const currentCount = parseInt(chip?.dataset.tabCount || '1', 10);
+
+    if (chip && currentCount > 1) {
+      const newCount = currentCount - 1;
+      chip.dataset.tabCount = String(newCount);
+      const dupeBadge = chip.querySelector('.chip-dupe-badge');
+      if (dupeBadge) {
+        if (newCount > 1) {
+          dupeBadge.textContent = ` (${newCount}x)`;
+        } else {
+          dupeBadge.remove();
+        }
+      }
+      if (parentCard) syncCardState(parentCard);
+      updateHeaderAndStats();
+    } else if (chip) {
+      chip.style.transition = 'opacity 0.2s, transform 0.2s';
+      chip.style.opacity    = '0';
+      chip.style.transform  = 'scale(0.95)';
+      setTimeout(() => {
+        chip.remove();
+        if (parentCard) syncCardState(parentCard);
+        updateHeaderAndStats();
+      }, 200);
+    } else {
+      updateHeaderAndStats();
+    }
 
     showToast('Tab closed');
     return;
@@ -1280,23 +1398,61 @@ document.addEventListener('click', async (e) => {
       return;
     }
 
-    // Close the tab in Chrome
-    const allTabs = await chrome.tabs.query({});
-    const match   = allTabs.find(t => t.url === tabUrl);
-    if (match) await chrome.tabs.remove(match.id);
+    // Close one tab matching this URL in Chrome (preferring current window)
+    let removedId = null;
+    try {
+      const allTabs = await chrome.tabs.query({});
+      const currentWindow = await chrome.windows.getCurrent();
+      const match = allTabs.find(t => t.url === tabUrl && t.windowId === currentWindow.id)
+                 || allTabs.find(t => t.url === tabUrl);
+      if (match) {
+        removedId = match.id;
+        await chrome.tabs.remove(match.id);
+      }
+    } catch (err) {
+      console.warn('[tab-out] Failed to close deferred tab:', err);
+    }
     await fetchOpenTabs();
 
-    // Animate chip out
+    // Reconcile in-memory domainGroups
+    if (removedId) {
+      for (const g of domainGroups) {
+        g.tabs = g.tabs.filter(t => t.id !== removedId);
+      }
+      domainGroups = domainGroups.filter(g => g.tabs.length > 0);
+    }
+
     const chip = actionEl.closest('.page-chip');
-    if (chip) {
+    const parentCard = chip ? chip.closest('.mission-card') : null;
+    const currentCount = parseInt(chip?.dataset.tabCount || '1', 10);
+
+    if (chip && currentCount > 1) {
+      const newCount = currentCount - 1;
+      chip.dataset.tabCount = String(newCount);
+      const dupeBadge = chip.querySelector('.chip-dupe-badge');
+      if (dupeBadge) {
+        if (newCount > 1) {
+          dupeBadge.textContent = ` (${newCount}x)`;
+        } else {
+          dupeBadge.remove();
+        }
+      }
+      if (parentCard) syncCardState(parentCard);
+      updateHeaderAndStats();
+    } else if (chip) {
       chip.style.transition = 'opacity 0.2s, transform 0.2s';
       chip.style.opacity    = '0';
       chip.style.transform  = 'scale(0.8)';
-      setTimeout(() => chip.remove(), 200);
+      setTimeout(() => {
+        chip.remove();
+        if (parentCard) syncCardState(parentCard);
+        updateHeaderAndStats();
+      }, 200);
+    } else {
+      updateHeaderAndStats();
     }
 
     showToast('Saved for later');
-    await renderDeferredColumn();
     return;
   }
 
@@ -1305,19 +1461,36 @@ document.addEventListener('click', async (e) => {
     const id = actionEl.dataset.deferredId;
     if (!id) return;
 
-    await checkOffSavedTab(id);
+    // Persist to storage immediately to prevent state loss on fast tab closure
+    animatingDeferredIds.add(id);
+    const savePromise = checkOffSavedTab(id);
 
-    // Animate: strikethrough first, then slide out
     const item = actionEl.closest('.deferred-item');
     if (item) {
       item.classList.add('checked');
       setTimeout(() => {
         item.classList.add('removing');
-        setTimeout(() => {
+        setTimeout(async () => {
           item.remove();
-          renderDeferredColumn(); // refresh counts and archive
-        }, 300);
-      }, 800);
+          animatingDeferredIds.delete(id);
+          try {
+            await savePromise;
+          } catch (err) {
+            console.error('Failed to save deferred tab:', err);
+          }
+          if (animatingDeferredIds.size === 0) {
+            renderDeferredColumn();
+          }
+        }, 200);
+      }, 300);
+    } else {
+      try {
+        await savePromise;
+      } catch (err) {
+        console.error('Failed to save deferred tab:', err);
+      }
+      animatingDeferredIds.delete(id);
+      renderDeferredColumn();
     }
     return;
   }
@@ -1327,40 +1500,58 @@ document.addEventListener('click', async (e) => {
     const id = actionEl.dataset.deferredId;
     if (!id) return;
 
-    await dismissSavedTab(id);
+    // Persist to storage immediately to prevent state loss on fast tab closure
+    animatingDeferredIds.add(id);
+    const dismissPromise = dismissSavedTab(id);
 
     const item = actionEl.closest('.deferred-item');
     if (item) {
       item.classList.add('removing');
-      setTimeout(() => {
+      setTimeout(async () => {
         item.remove();
-        renderDeferredColumn();
-      }, 300);
+        animatingDeferredIds.delete(id);
+        try {
+          await dismissPromise;
+        } catch (err) {
+          console.error('Failed to dismiss deferred tab:', err);
+        }
+        if (animatingDeferredIds.size === 0) {
+          renderDeferredColumn();
+        }
+      }, 200);
+    } else {
+      try {
+        await dismissPromise;
+      } catch (err) {
+        console.error('Failed to dismiss deferred tab:', err);
+      }
+      animatingDeferredIds.delete(id);
+      renderDeferredColumn();
     }
     return;
   }
 
   // ---- Close all tabs in a domain group ----
   if (action === 'close-domain-tabs') {
-    const domainId = actionEl.dataset.domainId;
-    const group    = domainGroups.find(g => {
-      return 'domain-' + g.domain.replace(/[^a-z0-9]/g, '-') === domainId;
-    });
+    const domain = actionEl.dataset.domain;
+    const group  = domainGroups.find(g => g.domain === domain);
     if (!group) return;
 
-    const urls      = group.tabs.map(t => t.url);
-    // Landing pages and custom groups (whose domain key isn't a real hostname)
-    // must use exact URL matching to avoid closing unrelated tabs
-    const useExact  = group.domain === '__landing-pages__' || !!group.label;
-
-    if (useExact) {
-      await closeTabsExact(urls);
-    } else {
-      await closeTabsByUrls(urls);
+    // Filter against currently active tabs in Chrome to avoid rejecting on closed IDs
+    let validTabIds = [];
+    try {
+      const currentTabs = await chrome.tabs.query({});
+      const liveIds = new Set(currentTabs.map(t => t.id));
+      validTabIds = group.tabs.map(t => t.id).filter(id => liveIds.has(id));
+      if (validTabIds.length > 0) {
+        await chrome.tabs.remove(validTabIds);
+      }
+    } catch (err) {
+      console.warn('[tab-out] Failed to close domain tabs:', err);
     }
+    await fetchOpenTabs();
 
     if (card) {
-      playCloseSound();
       animateCardOut(card);
     }
 
@@ -1369,10 +1560,9 @@ document.addEventListener('click', async (e) => {
     if (idx !== -1) domainGroups.splice(idx, 1);
 
     const groupLabel = group.domain === '__landing-pages__' ? 'Homepages' : (group.label || friendlyDomain(group.domain));
-    showToast(`Closed ${urls.length} tab${urls.length !== 1 ? 's' : ''} from ${groupLabel}`);
+    showToast(`Closed ${validTabIds.length} tab${validTabIds.length !== 1 ? 's' : ''} from ${groupLabel}`);
 
-    const statTabs = document.getElementById('statTabs');
-    if (statTabs) statTabs.textContent = openTabs.length;
+    updateHeaderAndStats();
     return;
   }
 
@@ -1382,101 +1572,186 @@ document.addEventListener('click', async (e) => {
     const urls = urlsEncoded.split(',').map(u => decodeURIComponent(u)).filter(Boolean);
     if (urls.length === 0) return;
 
-    await closeDuplicateTabs(urls, true);
-    playCloseSound();
+    try {
+      await closeDuplicateTabs(urls, true);
+    } catch (err) {
+      console.warn('[tab-out] Failed to close duplicates:', err);
+    }
+
+    // Reconcile in-memory domainGroups with live openTabs
+    try {
+      const liveTabs = await chrome.tabs.query({});
+      const liveIds = new Set(liveTabs.map(t => t.id));
+      for (const g of domainGroups) {
+        g.tabs = g.tabs.filter(t => liveIds.has(t.id));
+      }
+      domainGroups = domainGroups.filter(g => g.tabs.length > 0);
+    } catch {}
 
     // Hide the dedup button
     actionEl.style.transition = 'opacity 0.2s';
     actionEl.style.opacity    = '0';
     setTimeout(() => actionEl.remove(), 200);
 
-    // Remove dupe badges from the card
+    // Remove dupe badges and reset chip counts to 1
     if (card) {
-      card.querySelectorAll('.chip-dupe-badge').forEach(b => {
-        b.style.transition = 'opacity 0.2s';
-        b.style.opacity    = '0';
-        setTimeout(() => b.remove(), 200);
-      });
-      card.querySelectorAll('.open-tabs-badge').forEach(badge => {
-        if (badge.textContent.includes('duplicate')) {
-          badge.style.transition = 'opacity 0.2s';
-          badge.style.opacity    = '0';
-          setTimeout(() => badge.remove(), 200);
-        }
-      });
+      card.querySelectorAll('.chip-dupe-badge').forEach(b => b.remove());
+      card.querySelectorAll('.open-tabs-badge.dupe-badge').forEach(b => b.remove());
       card.classList.remove('has-amber-bar');
-      card.classList.add('has-neutral-bar');
+      card.querySelectorAll('.page-chip').forEach(c => {
+        c.dataset.tabCount = '1';
+      });
+      syncCardState(card);
     }
 
+    updateHeaderAndStats();
     showToast('Closed duplicates, kept one copy each');
     return;
   }
 
-  // ---- Close ALL open tabs ----
+  // ---- Close ALL open tabs (with confirmation step) ----
   if (action === 'close-all-open-tabs') {
-    const allUrls = openTabs
-      .filter(t => t.url && !t.url.startsWith('chrome') && !t.url.startsWith('about:'))
-      .map(t => t.url);
-    await closeTabsByUrls(allUrls);
-    playCloseSound();
+    if (!actionEl.classList.contains('confirming')) {
+      actionEl.classList.add('confirming');
+      const originalText = actionEl.innerHTML;
+      actionEl.innerHTML = `${ICONS.close} Confirm closing all tabs?`;
+      const timeoutId = setTimeout(() => {
+        if (actionEl.isConnected) {
+          actionEl.classList.remove('confirming');
+          actionEl.innerHTML = originalText;
+        }
+      }, 4000);
+      actionEl.dataset.confirmTimeout = String(timeoutId);
+      return;
+    }
+
+    clearTimeout(parseInt(actionEl.dataset.confirmTimeout || '0', 10));
+    actionEl.classList.remove('confirming');
+
+    const realTabs = getRealTabs();
+    const tabIds = realTabs.map(t => t.id).filter(Boolean);
+    try {
+      if (tabIds.length > 0) await chrome.tabs.remove(tabIds);
+    } catch (err) {
+      console.warn('[tab-out] Failed to close all tabs:', err);
+    }
+    await fetchOpenTabs();
+    domainGroups = [];
 
     document.querySelectorAll('#openTabsMissions .mission-card').forEach(c => {
-      shootConfetti(
-        c.getBoundingClientRect().left + c.offsetWidth / 2,
-        c.getBoundingClientRect().top  + c.offsetHeight / 2
-      );
       animateCardOut(c);
     });
 
+    setTimeout(() => {
+      updateHeaderAndStats();
+    }, 200);
     showToast('All tabs closed. Fresh start.');
+    return;
+  }
+
+  // ---- Unarchive (restore saved tab to active checklist) ----
+  if (action === 'unarchive-saved-tab') {
+    e.stopPropagation();
+    const id = actionEl.dataset.archiveId;
+    if (!id) return;
+
+    await unarchiveSavedTab(id);
+    showToast('Restored to Saved for later');
+    return;
+  }
+
+  // ---- Delete archived tab permanently ----
+  if (action === 'delete-archived-tab') {
+    e.stopPropagation();
+    const id = actionEl.dataset.archiveId;
+    if (!id) return;
+
+    await deleteSavedTab(id);
+    showToast('Deleted from archive');
+    return;
+  }
+
+  // ---- Archive toggle — expand/collapse the archive section ----
+  if (action === 'toggle-archive' || actionEl.id === 'archiveToggle' || actionEl.closest('#archiveToggle')) {
+    const toggle = document.getElementById('archiveToggle');
+    if (toggle) {
+      toggle.classList.toggle('open');
+      const isOpen = toggle.classList.contains('open');
+      toggle.setAttribute('aria-expanded', String(isOpen));
+      const body = document.getElementById('archiveBody');
+      if (body) {
+        body.style.display = isOpen ? 'block' : 'none';
+      }
+    }
     return;
   }
 });
 
-// ---- Archive toggle — expand/collapse the archive section ----
-document.addEventListener('click', (e) => {
-  const toggle = e.target.closest('#archiveToggle');
-  if (!toggle) return;
-
-  toggle.classList.toggle('open');
-  const body = document.getElementById('archiveBody');
-  if (body) {
-    body.style.display = body.style.display === 'none' ? 'block' : 'none';
-  }
-});
-
-// ---- Archive search — filter archived items as user types ----
-document.addEventListener('input', async (e) => {
+// ---- Archive search — debounced filter for archived items ----
+let searchTimeout = null;
+document.addEventListener('input', (e) => {
   if (e.target.id !== 'archiveSearch') return;
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(async () => {
+    const q = e.target.value.trim().toLowerCase();
+    const archiveList = document.getElementById('archiveList');
+    if (!archiveList) return;
 
-  const q = e.target.value.trim().toLowerCase();
-  const archiveList = document.getElementById('archiveList');
-  if (!archiveList) return;
+    try {
+      const { archived } = await getSavedTabs();
 
-  try {
-    const { archived } = await getSavedTabs();
+      if (q.length < 2) {
+        archiveList.innerHTML = archived.map(item => renderArchiveItem(item)).join('');
+        return;
+      }
 
-    if (q.length < 2) {
-      // Show all archived items
-      archiveList.innerHTML = archived.map(item => renderArchiveItem(item)).join('');
-      return;
+      const results = archived.filter(item =>
+        (item.title || '').toLowerCase().includes(q) ||
+        (item.url  || '').toLowerCase().includes(q)
+      );
+
+      archiveList.innerHTML = results.map(item => renderArchiveItem(item)).join('')
+        || '<div class="archive-no-results">No results</div>';
+    } catch (err) {
+      console.warn('[tab-out] Archive search failed:', err);
     }
-
-    // Filter by title or URL containing the query string
-    const results = archived.filter(item =>
-      (item.title || '').toLowerCase().includes(q) ||
-      (item.url  || '').toLowerCase().includes(q)
-    );
-
-    archiveList.innerHTML = results.map(item => renderArchiveItem(item)).join('')
-      || '<div style="font-size:12px;color:var(--muted);padding:8px 0">No results</div>';
-  } catch (err) {
-    console.warn('[tab-out] Archive search failed:', err);
-  }
+  }, 150);
 });
 
+// Keep dashboard synchronized with external tab events & window focus
+if (typeof chrome !== 'undefined' && chrome.tabs) {
+  let syncTimeout = null;
+  const debouncedSync = () => {
+    clearTimeout(syncTimeout);
+    syncTimeout = setTimeout(async () => {
+      await renderStaticDashboard();
+    }, 250);
+  };
+  chrome.tabs.onCreated?.addListener(debouncedSync);
+  chrome.tabs.onRemoved?.addListener(debouncedSync);
+  chrome.tabs.onUpdated?.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) {
+      debouncedSync();
+    }
+  });
+  window.addEventListener('focus', debouncedSync);
+}
+
+// Cross-tab sync for "Saved for later"
+if (typeof chrome !== 'undefined' && chrome.storage) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.deferred) {
+      if (animatingDeferredIds.size > 0) return;
+      renderDeferredColumn();
+    }
+  });
+}
 
 /* ----------------------------------------------------------------
    INITIALIZE
    ---------------------------------------------------------------- */
-renderDashboard();
+async function initDashboard() {
+  await renderStaticDashboard();
+  await renderDeferredColumn();
+}
+initDashboard();
