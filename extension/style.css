@@ -16,6 +16,13 @@
   justify-content: space-between;
   gap: var(--vbg-space-4);
   margin-bottom: var(--vbg-space-6);
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tab-cleanup-banner.removing {
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
 }
 
 .tab-cleanup-left {
@@ -132,7 +139,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--vbg-space-2);
-  transition: border-color 0.15s ease, opacity 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.15s ease, opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
 }
 
@@ -217,7 +224,13 @@
   align-items: center;
   gap: var(--vbg-space-2);
   line-height: var(--vbg-leading-compact);
-  transition: background-color 0.12s ease;
+  transition: background-color 0.12s ease, opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.page-chip.removing {
+  opacity: 0;
+  transform: scale(0.96);
+  pointer-events: none;
 }
 
 .page-chip:last-child {
@@ -361,6 +374,21 @@
   outline-offset: 1px;
 }
 
+@keyframes taboutChipReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-chips-overflow.expanded > .page-chip {
+  animation: taboutChipReveal 0.15s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
 /* ---- Card Actions row ---- */
 .actions {
   display: flex;
@@ -380,11 +408,17 @@
   background: var(--vbg-surface-secondary);
   color: var(--vbg-text-primary);
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   display: inline-flex;
   align-items: center;
   gap: var(--vbg-space-1);
   white-space: nowrap;
+}
+
+.action-btn.removing {
+  opacity: 0;
+  transform: scale(0.95);
+  pointer-events: none;
 }
 
 .action-btn:hover {
@@ -427,9 +461,10 @@
 
 .deferred-column {
   position: sticky;
-  top: var(--vbg-space-6);
+  top: var(--vbg-space-8);
   max-height: calc(100vh - 64px);
   overflow-y: auto;
+  overflow-x: hidden;
   border-left: 1px solid var(--vbg-border-subtle);
   padding-left: var(--vbg-space-8);
 }
@@ -456,6 +491,7 @@
   gap: var(--vbg-space-2);
   padding: var(--vbg-space-2) 0;
   border-bottom: 1px solid var(--vbg-border-subtle);
+  transition: opacity 0.16s cubic-bezier(0.16, 1, 0.3, 1), transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .deferred-item:last-child {
@@ -474,7 +510,7 @@
   cursor: pointer;
   flex-shrink: 0;
   margin-top: 2px;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
   position: relative;
 }
 
@@ -492,6 +528,17 @@
   border-color: var(--vbg-surface-contrast);
 }
 
+@keyframes taboutCheckmark {
+  from {
+    opacity: 0;
+    transform: rotate(45deg) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(45deg) scale(1);
+  }
+}
+
 .deferred-checkbox:checked::after {
   content: '';
   position: absolute;
@@ -502,6 +549,7 @@
   border: solid var(--vbg-text-on-contrast);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
+  animation: taboutCheckmark 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .deferred-info {
@@ -537,6 +585,10 @@
   display: flex;
   gap: var(--vbg-space-2);
   font-variant-numeric: tabular-nums;
+}
+
+.deferred-item.checked {
+  pointer-events: none;
 }
 
 .deferred-item.checked .deferred-title {
@@ -576,7 +628,7 @@
 .deferred-item.removing {
   opacity: 0;
   transform: translateX(12px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
 }
 
 .deferred-empty {
@@ -642,6 +694,22 @@
 
 .archive-body {
   padding-top: var(--vbg-space-3);
+  animation: taboutArchiveReveal 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.archive-body.collapsed {
+  display: none;
+}
+
+@keyframes taboutArchiveReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .archive-search-wrap {
@@ -833,7 +901,7 @@
   position: fixed;
   bottom: var(--vbg-space-6);
   left: 50%;
-  transform: translateX(-50%) translateY(40px);
+  transform: translateX(-50%) translateY(16px);
   background: var(--vbg-surface-contrast);
   color: var(--vbg-text-on-contrast);
   border: 1px solid var(--vbg-border-on-contrast);
@@ -843,7 +911,7 @@
   border-radius: var(--vbg-radius);
   z-index: 9999;
   opacity: 0;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
   display: flex;
   align-items: center;
@@ -861,13 +929,43 @@
   color: var(--vbg-color-success);
 }
 
-/* Respect Reduced Motion */
+/* Respect Reduced Motion — preserves intentional feedback while eliminating spatial movement */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .tab-cleanup-banner.removing,
+  .mission-card.closing,
+  .page-chip.removing,
+  .action-btn.removing,
+  .deferred-item.removing,
+  .archive-body,
+  .page-chips-overflow.expanded > .page-chip {
+    transform: none !important;
+  }
+
+  .toast,
+  .toast.visible {
+    transform: translateX(-50%) translateY(0) !important;
+  }
+
+  .archive-chevron {
+    transition: none !important;
+  }
+
+  .mission-card,
+  .page-chip,
+  .deferred-item,
+  .tab-cleanup-banner,
+  .toast,
+  .action-btn,
+  .deferred-checkbox {
+    transition-property: opacity, background-color, border-color, color !important;
+    transition-duration: 0.1s !important;
   }
 }

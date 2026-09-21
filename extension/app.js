@@ -361,7 +361,7 @@ async function deleteSavedTab(id) {
  * Adheres strictly to the stillness principle of Vercel Brand Guidelines.
  */
 function animateCardOut(card) {
-  if (!card) return;
+  if (!card || card.classList.contains('closing')) return;
 
   card.classList.add('closing');
   setTimeout(() => {
@@ -370,6 +370,8 @@ function animateCardOut(card) {
   }, 200);
 }
 
+let toastTimeout = null;
+
 /**
  * showToast(message)
  *
@@ -377,9 +379,12 @@ function animateCardOut(card) {
  */
 function showToast(message) {
   const toast = document.getElementById('toast');
-  document.getElementById('toastText').textContent = message;
+  if (!toast) return;
+  const textEl = document.getElementById('toastText');
+  if (textEl) textEl.textContent = message;
   toast.classList.add('visible');
-  setTimeout(() => toast.classList.remove('visible'), 2500);
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => toast.classList.remove('visible'), 2500);
 }
 
 /**
@@ -390,7 +395,7 @@ function showToast(message) {
  */
 function syncCardState(card) {
   if (!card) return;
-  const chips = card.querySelectorAll('.page-chip');
+  const chips = card.querySelectorAll('.page-chip:not(.removing)');
   const domain = card.dataset.domain;
 
   if (chips.length === 0) {
@@ -410,21 +415,30 @@ function syncCardState(card) {
     if (cnt > 1) remainingDupes += (cnt - 1);
   });
 
-  // Update .open-tabs-badge
-  const mainBadge = card.querySelector('.open-tabs-badge:not(.dupe-badge)');
-  if (mainBadge) {
-    mainBadge.textContent = `${remainingCount} tab${remainingCount !== 1 ? 's' : ''} open`;
+  // Update in-memory group tab count
+  const grp = domainGroups.find(g => g.domain === domain);
+  if (grp) {
+    // Keep only tabs whose URLs still exist in the remaining chips
+    const remainingUrls = new Set(Array.from(chips).map(c => c.dataset.tabUrl));
+    grp.tabs = grp.tabs.filter(t => remainingUrls.has(t.url));
   }
 
-  // Update dupe-badge
-  const dupeBadge = card.querySelector('.open-tabs-badge.dupe-badge');
-  if (dupeBadge) {
-    if (remainingDupes > 0) {
-      dupeBadge.textContent = `${remainingDupes} duplicate${remainingDupes !== 1 ? 's' : ''}`;
-    } else {
-      dupeBadge.remove();
-      card.classList.remove('has-amber-bar');
+  // Update open-tabs count badge on card
+  const countBadge = card.querySelector('.open-tabs-badge:not(.dupe-badge)');
+  if (countBadge) {
+    countBadge.textContent = `${remainingCount} tab${remainingCount !== 1 ? 's' : ''}`;
+  }
+
+  // Update duplicate count badge on card
+  const dupeCountBadge = card.querySelector('.open-tabs-badge.dupe-badge');
+  if (remainingDupes > 0) {
+    if (dupeCountBadge) {
+      dupeCountBadge.textContent = `${remainingDupes} dupe${remainingDupes !== 1 ? 's' : ''}`;
     }
+    card.classList.add('has-amber-bar');
+  } else {
+    if (dupeCountBadge) dupeCountBadge.remove();
+    card.classList.remove('has-amber-bar');
   }
 
   // Update close-domain-tabs button
@@ -438,7 +452,7 @@ function syncCardState(card) {
   }
 
   // Update dedup button
-  const dedupBtn = card.querySelector('.action-btn[data-action="dedup-keep-one"]');
+  const dedupBtn = card.querySelector('.action-btn[data-action="dedup-keep-one"]:not(.removing)');
   if (dedupBtn) {
     if (remainingDupes > 0) {
       dedupBtn.textContent = `Close ${remainingDupes} duplicate${remainingDupes !== 1 ? 's' : ''}`;
@@ -457,7 +471,7 @@ function checkAndShowEmptyState() {
   const missionsEl = document.getElementById('openTabsMissions');
   if (!missionsEl) return;
 
-  const remaining = missionsEl.querySelectorAll('.mission-card:not(.closing)').length;
+  const remaining = missionsEl.querySelectorAll('.mission-card').length;
   if (remaining > 0) return;
 
   missionsEl.innerHTML = `
@@ -1288,9 +1302,11 @@ document.addEventListener('click', async (e) => {
     await closeTabOutDupes();
     const banner = document.getElementById('tabOutDupeBanner');
     if (banner) {
-      banner.style.transition = 'opacity 0.4s';
-      banner.style.opacity = '0';
-      setTimeout(() => { banner.style.display = 'none'; banner.style.opacity = '1'; }, 400);
+      banner.classList.add('removing');
+      setTimeout(() => {
+        banner.style.display = 'none';
+        banner.classList.remove('removing');
+      }, 200);
     }
     showToast('Closed extra Tab Out tabs');
     return;
@@ -1305,6 +1321,7 @@ document.addEventListener('click', async (e) => {
     if (domain) expandedDomains.add(domain);
     const overflowContainer = actionEl.parentElement.querySelector('.page-chips-overflow');
     if (overflowContainer) {
+      overflowContainer.classList.add('expanded');
       overflowContainer.style.display = 'contents';
       actionEl.remove();
     }
@@ -1366,14 +1383,12 @@ document.addEventListener('click', async (e) => {
       if (parentCard) syncCardState(parentCard);
       updateHeaderAndStats();
     } else if (chip) {
-      chip.style.transition = 'opacity 0.2s, transform 0.2s';
-      chip.style.opacity    = '0';
-      chip.style.transform  = 'scale(0.95)';
+      chip.classList.add('removing');
       setTimeout(() => {
         chip.remove();
         if (parentCard) syncCardState(parentCard);
         updateHeaderAndStats();
-      }, 200);
+      }, 160);
     } else {
       updateHeaderAndStats();
     }
@@ -1440,14 +1455,12 @@ document.addEventListener('click', async (e) => {
       if (parentCard) syncCardState(parentCard);
       updateHeaderAndStats();
     } else if (chip) {
-      chip.style.transition = 'opacity 0.2s, transform 0.2s';
-      chip.style.opacity    = '0';
-      chip.style.transform  = 'scale(0.8)';
+      chip.classList.add('removing');
       setTimeout(() => {
         chip.remove();
         if (parentCard) syncCardState(parentCard);
         updateHeaderAndStats();
-      }, 200);
+      }, 160);
     } else {
       updateHeaderAndStats();
     }
@@ -1459,38 +1472,46 @@ document.addEventListener('click', async (e) => {
   // ---- Check off a saved tab (moves it to archive) ----
   if (action === 'check-deferred') {
     const id = actionEl.dataset.deferredId;
-    if (!id) return;
+    if (!id || animatingDeferredIds.has(id)) return;
+
+    const item = actionEl.closest('.deferred-item');
+    if (item && (item.classList.contains('checked') || item.classList.contains('removing'))) {
+      return;
+    }
 
     // Persist to storage immediately to prevent state loss on fast tab closure
     animatingDeferredIds.add(id);
     const savePromise = checkOffSavedTab(id);
 
-    const item = actionEl.closest('.deferred-item');
     if (item) {
       item.classList.add('checked');
       setTimeout(() => {
         item.classList.add('removing');
         setTimeout(async () => {
           item.remove();
-          animatingDeferredIds.delete(id);
           try {
             await savePromise;
           } catch (err) {
             console.error('Failed to save deferred tab:', err);
+          } finally {
+            animatingDeferredIds.delete(id);
+            if (animatingDeferredIds.size === 0) {
+              renderDeferredColumn();
+            }
           }
-          if (animatingDeferredIds.size === 0) {
-            renderDeferredColumn();
-          }
-        }, 200);
-      }, 300);
+        }, 160);
+      }, 120);
     } else {
       try {
         await savePromise;
       } catch (err) {
         console.error('Failed to save deferred tab:', err);
+      } finally {
+        animatingDeferredIds.delete(id);
+        if (animatingDeferredIds.size === 0) {
+          renderDeferredColumn();
+        }
       }
-      animatingDeferredIds.delete(id);
-      renderDeferredColumn();
     }
     return;
   }
@@ -1498,35 +1519,43 @@ document.addEventListener('click', async (e) => {
   // ---- Dismiss a saved tab (removes it entirely) ----
   if (action === 'dismiss-deferred') {
     const id = actionEl.dataset.deferredId;
-    if (!id) return;
+    if (!id || animatingDeferredIds.has(id)) return;
+
+    const item = actionEl.closest('.deferred-item');
+    if (item && (item.classList.contains('checked') || item.classList.contains('removing'))) {
+      return;
+    }
 
     // Persist to storage immediately to prevent state loss on fast tab closure
     animatingDeferredIds.add(id);
     const dismissPromise = dismissSavedTab(id);
 
-    const item = actionEl.closest('.deferred-item');
     if (item) {
       item.classList.add('removing');
       setTimeout(async () => {
         item.remove();
-        animatingDeferredIds.delete(id);
         try {
           await dismissPromise;
         } catch (err) {
           console.error('Failed to dismiss deferred tab:', err);
+        } finally {
+          animatingDeferredIds.delete(id);
+          if (animatingDeferredIds.size === 0) {
+            renderDeferredColumn();
+          }
         }
-        if (animatingDeferredIds.size === 0) {
-          renderDeferredColumn();
-        }
-      }, 200);
+      }, 160);
     } else {
       try {
         await dismissPromise;
       } catch (err) {
         console.error('Failed to dismiss deferred tab:', err);
+      } finally {
+        animatingDeferredIds.delete(id);
+        if (animatingDeferredIds.size === 0) {
+          renderDeferredColumn();
+        }
       }
-      animatingDeferredIds.delete(id);
-      renderDeferredColumn();
     }
     return;
   }
@@ -1589,9 +1618,8 @@ document.addEventListener('click', async (e) => {
     } catch {}
 
     // Hide the dedup button
-    actionEl.style.transition = 'opacity 0.2s';
-    actionEl.style.opacity    = '0';
-    setTimeout(() => actionEl.remove(), 200);
+    actionEl.classList.add('removing');
+    setTimeout(() => actionEl.remove(), 160);
 
     // Remove dupe badges and reset chip counts to 1
     if (card) {
@@ -1680,7 +1708,7 @@ document.addEventListener('click', async (e) => {
       toggle.setAttribute('aria-expanded', String(isOpen));
       const body = document.getElementById('archiveBody');
       if (body) {
-        body.style.display = isOpen ? 'block' : 'none';
+        body.classList.toggle('collapsed', !isOpen);
       }
     }
     return;
