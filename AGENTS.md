@@ -1,3 +1,7 @@
-Design -> Vercel Theme -> DESIGN.md
+Design: Vercel -> See DESIGN.md -> Use skill `impeccable`
 
-query docs `webextensions` dùng `docs-mcp-server` để lấy best-practice bản V3
+# Docs-mcp-server
+Các docs có thể sẽ hữu ích:
+- `webextensions` 
+- `typesafeai` khi work với jev api
+
