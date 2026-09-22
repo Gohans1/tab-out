@@ -1746,23 +1746,71 @@ document.addEventListener('input', (e) => {
   }, 150);
 });
 
-// Keep dashboard synchronized with external tab events & window focus
+// Keep dashboard synchronized with external tab events, visibility changes & window focus
 if (typeof chrome !== 'undefined' && chrome.tabs) {
   let syncTimeout = null;
-  const debouncedSync = () => {
-    clearTimeout(syncTimeout);
-    syncTimeout = setTimeout(async () => {
+  let isSyncing = false;
+  let pendingSync = false;
+  let pendingFullSync = false;
+
+  const performSync = async (fullSync = false) => {
+    if (isSyncing) {
+      pendingSync = true;
+      if (fullSync) pendingFullSync = true;
+      return;
+    }
+    isSyncing = true;
+    try {
       await renderStaticDashboard();
-    }, 250);
+      if ((fullSync || pendingFullSync) && animatingDeferredIds.size === 0) {
+        pendingFullSync = false;
+        await renderDeferredColumn();
+      }
+    } catch (err) {
+      console.warn('[tab-out] Sync failed:', err);
+    } finally {
+      isSyncing = false;
+      if (pendingSync) {
+        pendingSync = false;
+        const nextFull = pendingFullSync;
+        pendingFullSync = false;
+        performSync(nextFull);
+      }
+    }
   };
-  chrome.tabs.onCreated?.addListener(debouncedSync);
-  chrome.tabs.onRemoved?.addListener(debouncedSync);
+
+  const debouncedSync = (delay = 250, fullSync = false) => {
+    clearTimeout(syncTimeout);
+    // If the document is hidden, skip background DOM re-rendering.
+    // The visibilitychange listener will trigger an instant full sync when the tab is shown.
+    if (document.hidden && !fullSync) {
+      return;
+    }
+    if (delay === 0) {
+      performSync(fullSync);
+      return;
+    }
+    syncTimeout = setTimeout(() => performSync(fullSync), delay);
+  };
+
+  chrome.tabs.onCreated?.addListener(() => debouncedSync(250, false));
+  chrome.tabs.onRemoved?.addListener(() => debouncedSync(250, false));
   chrome.tabs.onUpdated?.addListener((tabId, changeInfo) => {
     if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) {
-      debouncedSync();
+      debouncedSync(250, false);
     }
   });
-  window.addEventListener('focus', debouncedSync);
+  chrome.tabs.onActivated?.addListener(() => {
+    if (!document.hidden) {
+      debouncedSync(50, false);
+    }
+  });
+  window.addEventListener('focus', () => debouncedSync(0, true));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      debouncedSync(0, true);
+    }
+  });
 }
 
 // Cross-tab sync for "Saved for later"
