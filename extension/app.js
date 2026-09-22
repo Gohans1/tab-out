@@ -1754,6 +1754,11 @@ if (typeof chrome !== 'undefined' && chrome.tabs) {
   let pendingFullSync = false;
 
   const performSync = async (fullSync = false) => {
+    // Re-check document visibility at execution time: skip background render if tab is hidden
+    if (document.hidden && !fullSync) {
+      return;
+    }
+
     if (isSyncing) {
       pendingSync = true;
       if (fullSync) pendingFullSync = true;
@@ -1779,18 +1784,15 @@ if (typeof chrome !== 'undefined' && chrome.tabs) {
     }
   };
 
+  // Coalesce rapid events (e.g. visibilitychange + focus) into a single execution
   const debouncedSync = (delay = 250, fullSync = false) => {
     clearTimeout(syncTimeout);
-    // If the document is hidden, skip background DOM re-rendering.
-    // The visibilitychange listener will trigger an instant full sync when the tab is shown.
-    if (document.hidden && !fullSync) {
-      return;
-    }
-    if (delay === 0) {
-      performSync(fullSync);
-      return;
-    }
-    syncTimeout = setTimeout(() => performSync(fullSync), delay);
+    if (fullSync) pendingFullSync = true;
+    syncTimeout = setTimeout(() => {
+      const isFull = pendingFullSync;
+      pendingFullSync = false;
+      performSync(isFull);
+    }, delay);
   };
 
   chrome.tabs.onCreated?.addListener(() => debouncedSync(250, false));
@@ -1800,17 +1802,19 @@ if (typeof chrome !== 'undefined' && chrome.tabs) {
       debouncedSync(250, false);
     }
   });
-  chrome.tabs.onActivated?.addListener(() => {
-    if (!document.hidden) {
-      debouncedSync(50, false);
-    }
-  });
-  window.addEventListener('focus', () => debouncedSync(0, true));
+  chrome.tabs.onAttached?.addListener(() => debouncedSync(250, false));
+  chrome.tabs.onDetached?.addListener(() => debouncedSync(250, false));
+
+  // Coalesce tab visibility and window focus into a single short 50ms window
+  window.addEventListener('focus', () => debouncedSync(50, true));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      debouncedSync(0, true);
+      debouncedSync(50, true);
     }
   });
+
+  // Export for initialization locking
+  window.__tabOutPerformSync = performSync;
 }
 
 // Cross-tab sync for "Saved for later"
@@ -1827,7 +1831,11 @@ if (typeof chrome !== 'undefined' && chrome.storage) {
    INITIALIZE
    ---------------------------------------------------------------- */
 async function initDashboard() {
-  await renderStaticDashboard();
-  await renderDeferredColumn();
+  if (typeof window !== 'undefined' && typeof window.__tabOutPerformSync === 'function') {
+    await window.__tabOutPerformSync(true);
+  } else {
+    await renderStaticDashboard();
+    await renderDeferredColumn();
+  }
 }
 initDashboard();
