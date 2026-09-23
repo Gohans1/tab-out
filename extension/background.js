@@ -69,12 +69,11 @@ const TRACKING_PARAMS = new Set([
   'oq', 'aqs', 'sourceid', 'ved', 'ei'
 ]);
 
-const HYGIENE_SCORE_CRITERIA = [
-  'Persistent important active workspace, primary application, document being edited, or critical reference',
-  'Secondary reference, documentation, article being read, or active task context',
-  'Browsing, search results, social feed, or non-critical reading',
-  'Temporary search query, disposable lookup, ad, redirect, promotional page, or duplicate tab safe to close'
-];
+
+function isAiEligibleUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  return url.startsWith('http://') || url.startsWith('https://');
+}
 
 const bgNormalizedUrlCache = new Map();
 
@@ -118,6 +117,13 @@ function normalizeUrlForCache(url) {
   } catch {
     return trimmed;
   }
+}
+
+function getCacheSource(entry) {
+  if (!entry) return '';
+  if (typeof entry === 'string') return 'ai';
+  if (typeof entry === 'object' && entry.source) return entry.source;
+  return 'local';
 }
 
 function buildChoiceCriteria(perspective) {
@@ -190,11 +196,18 @@ async function saveBgClassificationCache(updates) {
 
         for (const [urlKey, entry] of Object.entries(newItems)) {
           const existing = partitionCache[urlKey];
-          // Protect existing high-confidence AI entries from being downgraded
-          if (existing && existing.source === 'ai' && entry.source !== 'ai') {
+          const existingSource = getCacheSource(existing);
+          const entrySource = getCacheSource(entry);
+          // A completed AI decision must not be replaced by a stale local placeholder.
+          if (existing && ['ai', 'ai-low-confidence'].includes(existingSource) &&
+              !['ai', 'ai-low-confidence'].includes(entrySource)) {
             continue;
           }
-          if (existing && existing.source === 'ai' && entry.source === 'ai' &&
+          // A completed high-confidence AI decision must not be downgraded to low confidence.
+          if (existing && existingSource === 'ai' && entrySource === 'ai-low-confidence') {
+            continue;
+          }
+          if (existing && existingSource === 'ai' && entrySource === 'ai' &&
               typeof existing?.confidence === 'number' && typeof entry?.confidence === 'number' &&
               entry.confidence < existing.confidence) {
             continue;
@@ -202,7 +215,6 @@ async function saveBgClassificationCache(updates) {
           partitionCache[urlKey] = {
             ...(typeof existing === 'object' ? existing : {}),
             ...entry,
-            hygieneScore: entry.hygieneScore !== undefined ? entry.hygieneScore : existing?.hygieneScore,
             secondaryLabel: entry.secondaryLabel !== undefined ? entry.secondaryLabel : existing?.secondaryLabel
           };
           hasChanges = true;
@@ -229,6 +241,59 @@ async function saveBgClassificationCache(updates) {
 // ─── Debounced Multi-Perspective Background Preclassifier ────────────────────
 
 const pendingPreclassifyTabs = new Map();
+const aiReservations = new Map();
+const deferredPreclassifyTabs = new Map();
+
+function reservationMapKey(key) {
+  if (key.length <= 500) return key;
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    hash = Math.imul(hash ^ key.charCodeAt(i), 16777619);
+  }
+  return `${key.slice(0, 180)}:${key.length}:${(hash >>> 0).toString(16)}:${key.slice(-180)}`;
+}
+
+function updateAiReservations(message) {
+  const now = Date.now();
+  const claimed = [];
+  const released = [];
+  for (const key of message.keys) {
+    if (typeof key !== 'string' || !key) continue;
+    const mapKey = reservationMapKey(key);
+    const reservation = aiReservations.get(mapKey);
+    if (message.type === 'tabout-ai-release') {
+      if (reservation?.owner === message.owner) {
+        aiReservations.delete(mapKey);
+        released.push(key);
+      }
+    } else if (!reservation || reservation.until <= now) {
+      aiReservations.set(mapKey, { owner: message.owner, until: now + 30000 });
+      claimed.push(key);
+    }
+  }
+  if (released.length && deferredPreclassifyTabs.size) {
+    const releasedKeys = new Set(released);
+    for (const [tabId, deferred] of deferredPreclassifyTabs) {
+      if (deferred.keys.some(key => releasedKeys.has(key))) {
+        deferredPreclassifyTabs.delete(tabId);
+        if (!pendingPreclassifyTabs.has(tabId)) pendingPreclassifyTabs.set(tabId, deferred.tab);
+      }
+    }
+    if (pendingPreclassifyTabs.size) {
+      queueMicrotask(() => processPendingPreclassifications().catch(() => {}));
+    }
+  }
+  return { claimed };
+}
+
+function handleAiReservationMessage(message, sender, sendResponse) {
+  if (message?.type !== 'tabout-ai-claim' && message?.type !== 'tabout-ai-release') return false;
+  if (typeof chrome !== 'undefined' && chrome.runtime?.id && sender?.id !== chrome.runtime.id) return false;
+  if (typeof message.owner !== 'string' || !Array.isArray(message.keys) || message.keys.length > 1000) return false;
+  sendResponse(updateAiReservations(message));
+  return true;
+}
+
 let preclassifyDebounceTimer = null;
 let preclassifyResolvers = [];
 let isProcessingPreclassifications = false;
@@ -247,17 +312,20 @@ async function processPendingPreclassifications() {
   let semanticPerspectives = [];
   let validTabsInBatch = [];
   let currentCache = {};
+  const reservationOwner = `background-${Date.now()}-${Math.random()}`;
+  let reservedKeys = [];
 
   try {
     const settings = await chrome.storage.local.get([
       'openRouterApiKey',
+      'aiAuthBlocked',
       'perspectives',
       'activePerspectiveId',
       'tabClassificationCache'
     ]);
 
     const apiKey = settings.openRouterApiKey;
-    if (!apiKey) {
+    if (!apiKey || settings.aiAuthBlocked) {
       pendingPreclassifyTabs.clear();
       return;
     }
@@ -274,12 +342,21 @@ async function processPendingPreclassifications() {
       return;
     }
 
-    const batch = Array.from(pendingPreclassifyTabs.values()).slice(0, 12);
+    const partitionKeys = semanticPerspectives.map(p => `tabClassificationCache_${p.id}`);
+    const partRes = partitionKeys.length ? await chrome.storage.local.get(partitionKeys) : {};
+    currentCache = { ...(settings.tabClassificationCache || {}) };
+    for (const p of semanticPerspectives) {
+      const partKey = `tabClassificationCache_${p.id}`;
+      if (partRes[partKey] && typeof partRes[partKey] === 'object') {
+        currentCache[p.id] = { ...(currentCache[p.id] || {}), ...partRes[partKey] };
+      }
+    }
+
+    const batch = Array.from(pendingPreclassifyTabs.values()).slice(0, 24);
     for (const t of batch) {
       pendingPreclassifyTabs.delete(t.id || t.url);
     }
 
-    currentCache = settings.tabClassificationCache || {};
     const questions = {};
     const criteriaByPerspective = new Map();
 
@@ -289,6 +366,7 @@ async function processPendingPreclassifications() {
 
     const seenBatchUrls = new Set();
     batch.forEach((tab, tabIdx) => {
+      if (!isAiEligibleUrl(tab?.url)) return;
       const normUrl = normalizeUrlForCache(tab.url);
       if (!normUrl || seenBatchUrls.has(normUrl)) return;
       seenBatchUrls.add(normUrl);
@@ -302,7 +380,7 @@ async function processPendingPreclassifications() {
         const pCache = currentCache[p.id] || {};
         const pEntry = pCache[normUrl];
         const isFailedRecently = pEntry?.lastAiAttempt && (Date.now() - pEntry.lastAiAttempt < (pEntry.cooldownMs || 15000));
-        if (!isFailedRecently && (!pEntry || pEntry.source !== 'ai')) {
+        if (!isFailedRecently && (!pEntry || !['ai', 'ai-low-confidence'].includes(getCacheSource(pEntry)))) {
           const qKey = `${p.id}__${tabKey}`;
           questions[qKey] = {
             type: 'choice',
@@ -314,11 +392,7 @@ async function processPendingPreclassifications() {
       }
 
       if (tabHasAnyQuestion) {
-        questions[`hygiene__${tabKey}`] = {
-          type: 'score',
-          instructions: `Rate if \`tabs.${tabKey}\` is disposable or transient: 0 for persistent important active workspace, up to 3 for temporary search/disposable lookup/duplicate tab safe to close.`,
-          criteria: HYGIENE_SCORE_CRITERIA
-        };
+
         validTabsInBatch.push({ tabKey, cleanTitle, cleanUrl, normUrl, tabIdx });
       }
     });
@@ -326,6 +400,30 @@ async function processPendingPreclassifications() {
     if (validTabsInBatch.length === 0 || Object.keys(questions).length === 0) {
       return;
     }
+
+    const keysByQuestion = new Map();
+    for (const t of validTabsInBatch) {
+      for (const p of semanticPerspectives) {
+        const qKey = `${p.id}__${t.tabKey}`;
+        if (questions[qKey]) keysByQuestion.set(qKey, `${p.id}:${t.normUrl}`);
+      }
+    }
+    reservedKeys = updateAiReservations({ type: 'tabout-ai-claim', owner: reservationOwner, keys: [...new Set(keysByQuestion.values())] }).claimed;
+    const claimed = new Set(reservedKeys);
+    for (const t of validTabsInBatch) {
+      const blockedKeys = semanticPerspectives
+        .map(p => keysByQuestion.get(`${p.id}__${t.tabKey}`))
+        .filter(key => key && !claimed.has(key));
+      if (blockedKeys.length) {
+        const tab = batch[t.tabIdx];
+        deferredPreclassifyTabs.set(tab.id || tab.url, { tab, keys: blockedKeys });
+      }
+    }
+    for (const [qKey, key] of keysByQuestion) {
+      if (!claimed.has(key)) delete questions[qKey];
+    }
+    validTabsInBatch = validTabsInBatch.filter(t => semanticPerspectives.some(p => questions[`${p.id}__${t.tabKey}`]));
+    if (validTabsInBatch.length === 0) return;
 
     const state = { tabs: {} };
     validTabsInBatch.forEach(t => {
@@ -361,6 +459,10 @@ async function processPendingPreclassifications() {
     }
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 402 || response.status === 403) {
+        const latest = await chrome.storage.local.get('openRouterApiKey');
+        if (latest.openRouterApiKey === apiKey) await chrome.storage.local.set({ aiAuthBlocked: true });
+      }
       if (response.status === 401 || response.status === 403 || response.status === 402 || response.status === 429 || response.status === 529) {
         pendingPreclassifyTabs.clear();
       }
@@ -379,7 +481,7 @@ async function processPendingPreclassifications() {
           const qKey = `${p.id}__${t.tabKey}`;
           if (!questions[qKey]) return;
           const existing = currentCache[p.id]?.[t.normUrl];
-          if (!existing || existing.source !== 'ai') {
+          if (!existing || !['ai', 'ai-low-confidence'].includes(existing.source)) {
             if (!failedUpdates[p.id]) failedUpdates[p.id] = {};
             failedUpdates[p.id][t.normUrl] = {
               ...(typeof existing === 'object' ? existing : {}),
@@ -441,14 +543,12 @@ async function processPendingPreclassifications() {
         }
       }
 
-      const hygieneAns = answers[`hygiene__${tabKey}`];
-      const hygieneScore = (hygieneAns && typeof hygieneAns.score === 'number') ? hygieneAns.score : undefined;
 
       if (!updates[pid]) updates[pid] = {};
       updates[pid][tabInfo.normUrl] = {
         label: matched,
         secondaryLabel: secondaryLabel || undefined,
-        hygieneScore: hygieneScore !== undefined ? hygieneScore : undefined,
+
         source: isHighConfidence ? 'ai' : 'ai-low-confidence',
         confidence,
         cooldownMs: isHighConfidence ? undefined : 60000,
@@ -467,7 +567,7 @@ async function processPendingPreclassifications() {
         validTabsInBatch.forEach(t => {
           semanticPerspectives.forEach(p => {
             const existing = currentCache?.[p.id]?.[t.normUrl];
-            if (!existing || existing.source !== 'ai') {
+            if (!existing || !['ai', 'ai-low-confidence'].includes(existing.source)) {
               if (!failedUpdates[p.id]) failedUpdates[p.id] = {};
               failedUpdates[p.id][t.normUrl] = {
                 ...(typeof existing === 'object' ? existing : {}),
@@ -486,6 +586,7 @@ async function processPendingPreclassifications() {
       }
     } catch {}
   } finally {
+    updateAiReservations({ type: 'tabout-ai-release', owner: reservationOwner, keys: reservedKeys });
     isProcessingPreclassifications = false;
     if (pendingPreclassifyTabs.size > 0) {
       processPendingPreclassifications().catch(() => {});
@@ -500,22 +601,10 @@ async function processPendingPreclassifications() {
  * Debounced and batched across multiple perspectives for 0ms instant display.
  */
 async function preclassifyTabInBackground(tab) {
-  if (!tab || !tab.url) return;
-  const url = tab.url;
-
-  // Skip browser internals, extension pages, and local files
-  if (
-    url.startsWith('chrome://') ||
-    url.startsWith('chrome-extension://') ||
-    url.startsWith('about:') ||
-    url.startsWith('edge://') ||
-    url.startsWith('brave://') ||
-    url.startsWith('file://')
-  ) {
-    return;
-  }
+  if (!tab || !isAiEligibleUrl(tab.url)) return;
 
   const key = tab.id || url;
+  deferredPreclassifyTabs.delete(key);
   pendingPreclassifyTabs.set(key, tab);
 
   if (preclassifyDebounceTimer) {
@@ -544,6 +633,13 @@ async function preclassifyTabInBackground(tab) {
 // ─── Event listeners ──────────────────────────────────────────────────────────
 
 if (typeof chrome !== 'undefined') {
+  chrome.runtime?.onMessage?.addListener(handleAiReservationMessage);
+  chrome.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.openRouterApiKey &&
+        changes.openRouterApiKey.oldValue !== changes.openRouterApiKey.newValue) {
+      chrome.storage.local.set({ aiAuthBlocked: false });
+    }
+  });
   // Update badge when the extension is first installed
   chrome.runtime?.onInstalled?.addListener(() => {
     updateBadge();
@@ -564,12 +660,9 @@ if (typeof chrome !== 'undefined') {
     updateBadge();
   });
 
-  // Update badge when a tab's URL changes and pre-classify loaded web tabs
+  // Update badge when a tab's URL changes
   chrome.tabs?.onUpdated?.addListener((tabId, changeInfo, tab) => {
     updateBadge();
-    if (changeInfo && changeInfo.status === 'complete' && tab && tab.url) {
-      preclassifyTabInBackground(tab);
-    }
   });
 
   // ─── Initial run ─────────────────────────────────────────────────────────────
@@ -583,6 +676,8 @@ if (typeof module !== 'undefined' && module.exports) {
     updateBadge,
     preclassifyTabInBackground,
     buildChoiceCriteria,
-    saveBgClassificationCache
+    saveBgClassificationCache,
+    handleAiReservationMessage,
+    isAiEligibleUrl
   };
 }

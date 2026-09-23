@@ -29,6 +29,7 @@ const {
   pruneClassificationCache,
   getCacheLabel,
   getCacheSource,
+  triggerBackgroundClassification,
   classifyTabs,
   renderStaticDashboard,
   showConfirmDialog,
@@ -44,12 +45,16 @@ const {
   saveClassificationCacheAtomic,
   prewarmMultiPerspective,
   buildOverflowChips,
-  buildChoiceCriteria
+  buildChoiceCriteria,
+  handleStorageOnChanged,
+  isAiEligibleUrl
 } = require("../extension/app.js");
 
 const {
   preclassifyTabInBackground,
-  saveBgClassificationCache
+  saveBgClassificationCache,
+  handleAiReservationMessage,
+  isAiEligibleUrl: bgIsAiEligibleUrl
 } = require("../extension/background.js");
 
 describe("Perspective Classification Engine", () => {
@@ -845,58 +850,15 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
     }
   });
 
-  test("prewarmMultiPerspective evaluates questions for multiple inactive perspectives concurrently", async () => {
-    const originalChrome = (globalThis as any).chrome;
-    const originalFetch = globalThis.fetch;
-
-    let capturedBody: any = null;
-    let storedCache: any = {};
-
-    (globalThis as any).chrome = {
-      storage: {
-        local: {
-          get: async () => ({
-            openRouterApiKey: "mock-key",
-            tabClassificationCache: storedCache
-          }),
-          set: async (obj: any) => {
-            storedCache = obj.tabClassificationCache;
-          }
-        }
-      }
-    };
-
-    globalThis.fetch = (async (url: string, init: any) => {
-      capturedBody = JSON.parse(init.body);
-      return {
-        ok: true,
-        json: async () => ({
-          answers: {
-            "p1__tab_0": { choice: "Label 1" },
-            "p2__tab_0": { choice: "Label 2" }
-          }
-        })
-      };
-    }) as any;
-
+  test("prewarmMultiPerspective is a no-op under strict on-demand architecture (zero token waste)", async () => {
+    let fetchCalled = false;
+    const oldFetch = globalThis.fetch;
+    globalThis.fetch = (async () => { fetchCalled = true; return { ok: true }; }) as any;
     try {
-      const realTabs = [{ title: "Documentation page", url: "https://bun.sh/docs" }];
-      const inactivePerspectives = [
-        { id: "p1", name: "P1", labels: [{ name: "Label 1", description: "L1" }] },
-        { id: "p2", name: "P2", labels: [{ name: "Label 2", description: "L2" }] }
-      ];
-
-      await loadPerspectiveSettings(true);
-      await prewarmMultiPerspective(realTabs, inactivePerspectives);
-
-      expect(capturedBody).toBeDefined();
-      expect(capturedBody.questions["p1__tab_0"]).toBeDefined();
-      expect(capturedBody.questions["p2__tab_0"]).toBeDefined();
-      expect(storedCache.p1).toBeDefined();
-      expect(storedCache.p2).toBeDefined();
+      await prewarmMultiPerspective([{ title: "Doc", url: "https://bun.sh" }], [{ id: "p1", labels: ["L1"] }]);
+      expect(fetchCalled).toBe(false);
     } finally {
-      globalThis.fetch = originalFetch;
-      (globalThis as any).chrome = originalChrome;
+      globalThis.fetch = oldFetch;
     }
   });
 
@@ -930,6 +892,58 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
       // Verify the entry remains 'ai' and was not overwritten by 'local'
       expect(storedCache.topic["https://example.com/ai-tool"].source).toBe("ai");
       expect(storedCache.topic["https://example.com/ai-tool"].label).toBe("AI xịn");
+    } finally {
+      (globalThis as any).chrome = originalChrome;
+    }
+  });
+
+  test("completed low-confidence decisions cannot be downgraded by a stale local save", async () => {
+    const originalChrome = (globalThis as any).chrome;
+    const url = 'https://stale.example.com/page';
+    const completed = { label: 'Code', source: 'ai-low-confidence', confidence: 0.3, timestamp: 200 };
+    const storage: Record<string, any> = {
+      tabClassificationCache_topic: { [url]: completed },
+      tabClassificationCache: { topic: { [url]: completed } }
+    };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => structuredClone(storage),
+      set: async (updates: any) => Object.assign(storage, updates)
+    } } };
+    try {
+      await saveClassificationCacheAtomic('topic', {
+        [url]: { label: 'Other', source: 'local', timestamp: 300 }
+      });
+      expect(storage.tabClassificationCache_topic[url]).toEqual(completed);
+      await saveBgClassificationCache({ topic: {
+        [url]: { label: 'Other', source: 'local', timestamp: 400 }
+      } });
+      expect(storage.tabClassificationCache_topic[url]).toEqual(completed);
+    } finally {
+      (globalThis as any).chrome = originalChrome;
+    }
+  });
+
+  test("completed high-confidence decisions cannot be downgraded by a low-confidence save", async () => {
+    const originalChrome = (globalThis as any).chrome;
+    const url = 'https://high-conf.example.com/page';
+    const highConf = { label: 'Code', source: 'ai', confidence: 0.9, timestamp: 200 };
+    const storage: Record<string, any> = {
+      tabClassificationCache_topic: { [url]: highConf },
+      tabClassificationCache: { topic: { [url]: highConf } }
+    };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => structuredClone(storage),
+      set: async (updates: any) => Object.assign(storage, updates)
+    } } };
+    try {
+      await saveClassificationCacheAtomic('topic', {
+        [url]: { label: 'Other', source: 'ai-low-confidence', confidence: 0.3, timestamp: 300 }
+      });
+      expect(storage.tabClassificationCache_topic[url]).toEqual(highConf);
+      await saveBgClassificationCache({ topic: {
+        [url]: { label: 'Other', source: 'ai-low-confidence', confidence: 0.3, timestamp: 400 }
+      } });
+      expect(storage.tabClassificationCache_topic[url]).toEqual(highConf);
     } finally {
       (globalThis as any).chrome = originalChrome;
     }
@@ -1007,7 +1021,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
     }
   });
 
-  test("classifyTabs speculatively fans out questions to inactive perspectives in a single HTTP request", async () => {
+  test("classifyTabs strictly queries only active perspective questions without token-burning fanout", async () => {
     const originalChrome = (globalThis as any).chrome;
     const originalFetch = globalThis.fetch;
 
@@ -1049,8 +1063,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
         ok: true,
         json: async () => ({
           answers: {
-            "tab_0": { choice: "Lập trình / Dev", confidence: 0.9 },
-            "purpose__tab_0": { choice: "Công việc", confidence: 0.88 }
+            "tab_0": { choice: "Lập trình / Dev", confidence: 0.9 }
           }
         })
       } as any;
@@ -1068,19 +1081,17 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
       const result = await classifyTabs(tabs, activeP, true);
       const tabUrl = normalizeUrlForCache(tabs[0].url);
 
-      // Verify questions for active perspective AND speculative inactive perspective were in 1 request
+      // Verify questions for active perspective were sent, and inactive perspective was NOT sent
       expect(capturedBody).toBeDefined();
       expect(capturedBody.questions["tab_0"]).toBeDefined();
-      expect(capturedBody.questions["purpose__tab_0"]).toBeDefined();
+      expect(capturedBody.questions["purpose__tab_0"]).toBeUndefined();
 
       // Verify active perspective cache
       expect(result[tabUrl].source).toBe("ai");
       expect(result[tabUrl].label).toBe("Lập trình / Dev");
 
-      // Verify inactive perspective cache was speculatively populated
-      expect(savedStorage.purpose).toBeDefined();
-      expect(savedStorage.purpose[tabUrl].label).toBe("Công việc");
-      expect(savedStorage.purpose[tabUrl].source).toBe("ai");
+      // Verify inactive perspective cache was NOT speculatively populated
+      expect(savedStorage.purpose).toBeUndefined();
     } finally {
       globalThis.fetch = originalFetch;
       (globalThis as any).chrome = originalChrome;
@@ -1166,7 +1177,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
     expect(crit3["Chung"]).toBeDefined();
   });
 
-  test("classifyTabs sets cooldownMs and lastAiAttempt on low-confidence entries and skips re-querying during cooldown", async () => {
+  test("classifyTabs never automatically retries a low-confidence choice", async () => {
     const originalChrome = (globalThis as any).chrome;
     const originalFetch = globalThis.fetch;
 
@@ -1220,13 +1231,45 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
       expect(res[normUrl].lastAiAttempt).toBeGreaterThan(0);
       expect(fetchCount).toBe(1);
 
-      // Second call within cooldown window without forceAi: should skip AI call and return cached entry
+      // An old, low-confidence answer is still a completed AI decision.
+      mockStorage[`tabClassificationCache_${DEFAULT_PERSPECTIVES[1].id}`][normUrl].lastAiAttempt = Date.now() - 120000;
+      await loadPerspectiveSettings(true);
       const res2 = await classifyTabs(tabs, DEFAULT_PERSPECTIVES[1], false);
       expect(fetchCount).toBe(1); // Not called again!
       expect(res2[normUrl].source).toBe("ai-low-confidence");
     } finally {
       globalThis.fetch = originalFetch;
       (globalThis as any).chrome = originalChrome;
+    }
+  });
+
+  test("dashboard background refinement does not force retry an old low-confidence decision", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const tab = { id: 710, title: 'Ambiguous', url: 'https://ambiguous.example.org/post' };
+    const url = normalizeUrlForCache(tab.url);
+    const entry = { label: 'Code', source: 'ai-low-confidence', confidence: 0.2,
+      lastAiAttempt: Date.now() - 120000, cooldownMs: 60000 };
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'test-key', activePerspectiveId: 'topic',
+      perspectives: DEFAULT_PERSPECTIVES,
+      tabClassificationCache_topic: { [url]: entry },
+      tabClassificationCache: { topic: { [url]: entry } }
+    };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => structuredClone(storage),
+      set: async (updates: any) => Object.assign(storage, updates)
+    } } };
+    let calls = 0;
+    globalThis.fetch = (async () => { calls++; return { ok: true, json: async () => ({ answers: {} }) }; }) as any;
+    try {
+      await loadPerspectiveSettings(true);
+      triggerBackgroundClassification([tab], DEFAULT_PERSPECTIVES[1]);
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(calls).toBe(0);
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
     }
   });
 
@@ -1411,7 +1454,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
     expect(criteria["Khác"]).toBeDefined();
   });
 
-  test("classifyTabs records hygieneScore from TypeSafe AI score questions", async () => {
+  test("classifyTabs sends only useful choice questions", async () => {
     const originalFetch = globalThis.fetch;
     const originalChrome = (globalThis as any).chrome;
 
@@ -1441,9 +1484,6 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
             tab_0: {
               choice: DEFAULT_PERSPECTIVES[1].labels[0].name,
               confidence: 0.95
-            },
-            hygiene__tab_0: {
-              score: 2
             }
           }
         })
@@ -1455,16 +1495,11 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
       const tabs = [{ id: 910, title: "Disposable Tab", url: "https://disposable-search.com" }];
       const res = await classifyTabs(tabs, DEFAULT_PERSPECTIVES[1], true);
 
-      // Verify hygiene question was sent with standard ScoreQuestion criteria array per TypeSafe AI spec
-      expect(sentBody?.questions?.hygiene__tab_0).toBeDefined();
-      expect(sentBody.questions.hygiene__tab_0.type).toBe('score');
-      expect(Array.isArray(sentBody.questions.hygiene__tab_0.criteria)).toBe(true);
-      expect(sentBody.questions.hygiene__tab_0.criteria.length).toBeGreaterThanOrEqual(2);
-      expect(sentBody.questions.hygiene__tab_0.range).toBeUndefined();
+      expect(Object.values(sentBody.questions).every((q: any) => q.type === 'choice')).toBe(true);
 
       const normUrl = normalizeUrlForCache(tabs[0].url);
       expect(res[normUrl]).toBeDefined();
-      expect(res[normUrl].hygieneScore).toBe(2);
+      expect(res[normUrl].hygieneScore).toBeUndefined();
       expect(res[normUrl].source).toBe("ai");
     } finally {
       globalThis.fetch = originalFetch;
@@ -1472,7 +1507,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
     }
   });
 
-  test("saveClassificationCacheAtomic and saveBgClassificationCache preserve hygieneScore and secondaryLabel", async () => {
+  test("saveClassificationCacheAtomic and saveBgClassificationCache preserve secondaryLabel", async () => {
     const originalChrome = (globalThis as any).chrome;
 
     const mockStorage: Record<string, any> = {
@@ -1481,7 +1516,6 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
           label: "Công việc",
           source: "ai",
           confidence: 0.95,
-          hygieneScore: 1,
           secondaryLabel: "Dự án",
           timestamp: Date.now() - 5000
         }
@@ -1506,7 +1540,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
     };
 
     try {
-      // Frontend atomic save without hygieneScore or secondaryLabel must NOT overwrite existing ones
+      // Frontend atomic save without secondaryLabel must NOT overwrite existing one
       await saveClassificationCacheAtomic("topic", {
         "https://example.com/item1": {
           label: "Công việc",
@@ -1518,10 +1552,9 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
 
       const entryAfterApp = mockStorage["tabClassificationCache_topic"]["https://example.com/item1"];
       expect(entryAfterApp.confidence).toBe(0.98);
-      expect(entryAfterApp.hygieneScore).toBe(1);
       expect(entryAfterApp.secondaryLabel).toBe("Dự án");
 
-      // Background save without hygieneScore or secondaryLabel must also preserve them
+      // Background save without secondaryLabel must also preserve it
       await saveBgClassificationCache({
         topic: {
           "https://example.com/item1": {
@@ -1535,7 +1568,6 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
 
       const entryAfterBg = mockStorage["tabClassificationCache_topic"]["https://example.com/item1"];
       expect(entryAfterBg.confidence).toBe(0.99);
-      expect(entryAfterBg.hygieneScore).toBe(1);
       expect(entryAfterBg.secondaryLabel).toBe("Dự án");
     } finally {
       (globalThis as any).chrome = originalChrome;
@@ -1690,7 +1722,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
     }
   });
 
-  test("preclassifyTabInBackground sends hygiene score question and persists hygieneScore in storage", async () => {
+  test("preclassifyTabInBackground sends only choice questions", async () => {
     const originalFetch = globalThis.fetch;
     const originalChrome = (globalThis as any).chrome;
 
@@ -1727,9 +1759,6 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
             "topic__tab_0": {
               choice: DEFAULT_PERSPECTIVES[1].labels[0].name,
               confidence: 0.95
-            },
-            "hygiene__tab_0": {
-              score: 3
             }
           }
         })
@@ -1740,15 +1769,11 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
       const tab = { id: 940, title: "Background Tab Test", url: "https://disposable-bg.com" };
       await preclassifyTabInBackground(tab);
 
-      // Verify hygiene question was sent
-      expect(sentQuestions["hygiene__tab_0"]).toBeDefined();
-      expect(sentQuestions["hygiene__tab_0"].type).toBe("score");
-      expect(Array.isArray(sentQuestions["hygiene__tab_0"].criteria)).toBe(true);
+      expect(Object.values(sentQuestions).every((q: any) => q.type === 'choice')).toBe(true);
 
-      // Verify hygieneScore was saved to storage
       const normUrl = normalizeUrlForCache(tab.url);
       expect(mockStorage["tabClassificationCache_topic"]).toBeDefined();
-      expect(mockStorage["tabClassificationCache_topic"][normUrl].hygieneScore).toBe(3);
+      expect(mockStorage["tabClassificationCache_topic"][normUrl].hygieneScore).toBeUndefined();
       expect(mockStorage["tabClassificationCache_topic"][normUrl].source).toBe("ai");
     } finally {
       globalThis.fetch = originalFetch;
@@ -1852,7 +1877,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
     }
   });
 
-  test("speculative fan-out in classifyTabs attaches hygieneScore to otherPerspectiveUpdates", async () => {
+  test("classifyTabs saves only active perspective classification labels under on-demand mode", async () => {
     const originalFetch = globalThis.fetch;
     const originalChrome = (globalThis as any).chrome;
 
@@ -1881,9 +1906,7 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
       ok: true,
       json: async () => ({
         answers: {
-          "tab_0": { choice: "Lập trình / Dev", confidence: 0.95 },
-          "purpose__tab_0": { choice: "Nghiên cứu", confidence: 0.90 },
-          "hygiene__tab_0": { score: 2 }
+          "tab_0": { choice: "Lập trình / Dev", confidence: 0.95 }
         }
       })
     })) as any;
@@ -1895,14 +1918,12 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
 
       const normUrl = normalizeUrlForCache(tab.url);
       expect(res[normUrl]).toBeDefined();
-      expect(res[normUrl].hygieneScore).toBe(2);
+      expect(res[normUrl].hygieneScore).toBeUndefined();
+      expect(res[normUrl].source).toBe("ai");
 
-      // Verify that the inactive perspective (purpose) partition also received the hygieneScore
+      // Verify inactive perspective was not queried or saved
       const purposePartition = savedPartitions["tabClassificationCache_purpose"];
-      expect(purposePartition).toBeDefined();
-      expect(purposePartition[normUrl]).toBeDefined();
-      expect(purposePartition[normUrl].hygieneScore).toBe(2);
-      expect(purposePartition[normUrl].source).toBe("ai");
+      expect(purposePartition).toBeUndefined();
     } finally {
       globalThis.fetch = originalFetch;
       (globalThis as any).chrome = originalChrome;
@@ -2005,7 +2026,599 @@ describe("Jev Performance, Caching & Batching Optimization", () => {
       (globalThis as any).chrome = originalChrome;
     }
   });
+
+  test("classifyTabs batches 24 tabs into one request before starting another", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const storage: Record<string, any> = { openRouterApiKey: 'test-key', perspectives: DEFAULT_PERSPECTIVES };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => storage,
+      set: async (value: any) => Object.assign(storage, value)
+    } } };
+    const counts: number[] = [];
+    let outstanding = 0;
+    let maxOutstanding = 0;
+    globalThis.fetch = (async (_url: string, init: any) => {
+      outstanding++;
+      maxOutstanding = Math.max(outstanding, maxOutstanding);
+      const body = JSON.parse(init.body);
+      counts.push(Object.keys(body.state.tabs).length);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      outstanding--;
+      return { ok: true, json: async () => ({ answers: {} }) } as any;
+    }) as any;
+    try {
+      await loadPerspectiveSettings(true);
+      const tabs = Array.from({ length: 25 }, (_, id) => ({ id, title: `Tab ${id}`, url: `https://batch.example.com/${id}` }));
+      await classifyTabs(tabs, DEFAULT_PERSPECTIVES[1], true, { skipSpeculativeFanout: true });
+      expect(counts).toEqual([24, 1]);
+      expect(maxOutstanding).toBe(1);
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("background does not retry a completed low-confidence choice after cooldown", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const url = normalizeUrlForCache('https://ambiguous.example.com/page');
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'test-key',
+      perspectives: [{ id: 'topic', name: 'Topic', labels: [{ name: 'Code', description: 'Programming' }] }],
+      tabClassificationCache: { topic: { [url]: {
+        label: 'Code', source: 'ai-low-confidence', confidence: 0.3,
+        lastAiAttempt: Date.now() - 120000, cooldownMs: 60000
+      } } }
+    };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => storage,
+      set: async (value: any) => Object.assign(storage, value)
+    } } };
+    let calls = 0;
+    globalThis.fetch = (async () => { calls++; return { ok: true, json: async () => ({ answers: {} }) }; }) as any;
+    try {
+      await preclassifyTabInBackground({ id: 5001, title: 'Ambiguous', url });
+      expect(calls).toBe(0);
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("background auth failure disables further requests until the key changes", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'first-key',
+      perspectives: [{ id: 'topic', name: 'Topic', labels: [{ name: 'Code', description: 'Programming' }] }],
+      tabClassificationCache: {}
+    };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => structuredClone(storage),
+      set: async (value: any) => Object.assign(storage, value)
+    }, onChanged: { addListener: () => {} } } };
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return calls === 1
+        ? { ok: false, status: 401, headers: { get: () => null } }
+        : { ok: true, json: async () => ({ answers: { topic__tab_0: { choice: 'Code' } } }) };
+    }) as any;
+    try {
+      await preclassifyTabInBackground({ id: 6001, url: 'https://auth.example.com/one' });
+      await preclassifyTabInBackground({ id: 6002, url: 'https://auth.example.com/two' });
+      expect(calls).toBe(1);
+      storage.openRouterApiKey = 'new-key';
+      storage.aiAuthBlocked = false; // Settings clears the breaker when saving a new key.
+      await preclassifyTabInBackground({ id: 6003, url: 'https://auth.example.com/three' });
+      expect(calls).toBe(2);
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("late auth failure for an old key cannot block a newly saved key", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'old-key', aiAuthBlocked: false,
+      perspectives: [{ id: 'topic', labels: [{ name: 'Code', description: 'Programming' }] }]
+    };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => storage,
+      set: async (value: any) => Object.assign(storage, value)
+    } } };
+    let started!: () => void;
+    const requested = new Promise<void>(resolve => { started = resolve; });
+    let finish!: (value: any) => void;
+    globalThis.fetch = (async () => {
+      started();
+      return new Promise(resolve => { finish = resolve; });
+    }) as any;
+    try {
+      const work = preclassifyTabInBackground({ id: 6600, url: 'https://old-key.example.com' });
+      await requested;
+      storage.openRouterApiKey = 'new-key';
+      finish({ ok: false, status: 401, headers: { get: () => null } });
+      await work;
+      expect(storage.aiAuthBlocked).toBe(false);
+    } finally {
+      if (finish) finish({ ok: false, status: 401, headers: { get: () => null } });
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("foreground stops remaining batches after an auth failure", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const storage: Record<string, any> = { openRouterApiKey: 'test-key', perspectives: DEFAULT_PERSPECTIVES };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => storage,
+      set: async (value: any) => Object.assign(storage, value)
+    } } };
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return { ok: false, status: 402, headers: { get: () => null } };
+    }) as any;
+    try {
+      await loadPerspectiveSettings(true);
+      const tabs = Array.from({ length: 25 }, (_, id) => ({ id, title: `Tab ${id}`, url: `https://credits.example.com/${id}` }));
+      await classifyTabs(tabs, DEFAULT_PERSPECTIVES[1], true, { skipSpeculativeFanout: true });
+      expect(storage.aiAuthBlocked).toBe(true);
+      expect(calls).toBe(1);
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("background reservation atomically claims a perspective and URL for one owner", () => {
+    expect(typeof handleAiReservationMessage).toBe('function');
+    const key = 'topic:https://reserve.example.com';
+    const send = (type: string, owner: string) => {
+      let response: any;
+      handleAiReservationMessage({ type, owner, keys: [key] }, { id: 'test-extension' }, (value: any) => { response = value; });
+      return response;
+    };
+    expect(send('tabout-ai-claim', 'first').claimed).toEqual([key]);
+    expect(send('tabout-ai-claim', 'second').claimed).toEqual([]);
+    send('tabout-ai-release', 'second');
+    expect(send('tabout-ai-claim', 'second').claimed).toEqual([]);
+    send('tabout-ai-release', 'first');
+    expect(send('tabout-ai-claim', 'second').claimed).toEqual([key]);
+    send('tabout-ai-release', 'second');
+  });
+
+  test("a worker result for a later batch is preserved and not requested again", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const topic = { id: 'topic', labels: [{ name: 'Code', description: 'Programming' }] };
+    const tabs = Array.from({ length: 25 }, (_, id) => ({ id: 7400 + id,
+      title: `Batch ${id}`, url: `https://batch-race.example.com/${id}` }));
+    const lastUrl = normalizeUrlForCache(tabs[24].url);
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'test-key', activePerspectiveId: 'topic',
+      perspectives: [topic], tabClassificationCache: {}
+    };
+    (globalThis as any).chrome = { storage: { local: {
+      get: async () => structuredClone(storage),
+      set: async (updates: any) => Object.assign(storage, structuredClone(updates))
+    } } };
+    let firstStarted!: () => void;
+    const started = new Promise<void>(resolve => { firstStarted = resolve; });
+    let completeFirst!: (response: any) => void;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      if (calls === 1) {
+        firstStarted();
+        return new Promise(resolve => { completeFirst = resolve; });
+      }
+      return { ok: true, json: async () => ({ answers: {} }) };
+    }) as any;
+    try {
+      await loadPerspectiveSettings(true);
+      const dashboard = classifyTabs(tabs, topic, false, { skipSpeculativeFanout: true });
+      await started;
+      await saveBgClassificationCache({ topic: { [lastUrl]: {
+        label: 'Code', source: 'ai-low-confidence', confidence: 0.3, timestamp: Date.now()
+      } } });
+      completeFirst({ ok: true, json: async () => ({ answers: { tab_0: { choice: 'Code' } } }) });
+      await dashboard;
+      expect(storage.tabClassificationCache.topic[lastUrl].source).toBe('ai-low-confidence');
+      expect(calls).toBe(1);
+    } finally {
+      if (completeFirst) completeFirst({ ok: true, json: async () => ({ answers: {} }) });
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("foreground classifies long URLs through the worker reservation", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const topic = { id: 'topic', labels: [{ name: 'Code', description: 'Programming' }] };
+    const tab = { id: 7300, title: 'Long URL', url: `https://long.example.com/${'x'.repeat(550)}` };
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'test-key', activePerspectiveId: 'topic',
+      perspectives: [topic], tabClassificationCache: {}
+    };
+    (globalThis as any).chrome = {
+      runtime: { id: 'test-extension', sendMessage: async (message: any) => {
+        let response: any;
+        handleAiReservationMessage(message, { id: 'test-extension' }, (value: any) => { response = value; });
+        return response;
+      } },
+      storage: { local: {
+        get: async () => structuredClone(storage),
+        set: async (updates: any) => Object.assign(storage, structuredClone(updates))
+      } }
+    };
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return { ok: true, json: async () => ({ answers: { tab_0: { choice: 'Code' } } }) };
+    }) as any;
+    try {
+      await loadPerspectiveSettings(true);
+      const result = await classifyTabs([tab], topic, false, { skipSpeculativeFanout: true });
+      expect(calls).toBe(1);
+      expect(result[normalizeUrlForCache(tab.url)].source).toBe('ai');
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("reservation accepts long normalized URLs without confusing nearby URLs", () => {
+    const base = 'topic:https://long.example.com/' + 'x'.repeat(510);
+    const first = `${base}a`;
+    const second = `${base}b`;
+    const send = (type: string, owner: string, keys: string[]) => {
+      let response: any;
+      handleAiReservationMessage({ type, owner, keys }, { id: 'test-extension' }, (value: any) => { response = value; });
+      return response;
+    };
+    expect(send('tabout-ai-claim', 'first-long', [first]).claimed).toEqual([first]);
+    expect(send('tabout-ai-claim', 'second-long', [first, second]).claimed).toEqual([second]);
+    send('tabout-ai-release', 'first-long', [first]);
+    send('tabout-ai-release', 'second-long', [second]);
+  });
+
+  test("worker retries a contested tab after dashboard aborts and releases it", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const topic = { id: 'topic', name: 'Topic', labels: [{ name: 'Code', description: 'Programming' }] };
+    const tab = { id: 7200, title: 'Contested', url: 'https://contested.example.com' };
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'test-key', activePerspectiveId: 'topic',
+      perspectives: [topic], tabClassificationCache: {}
+    };
+    (globalThis as any).chrome = {
+      runtime: { id: 'test-extension', sendMessage: async (message: any) => {
+        let response: any;
+        handleAiReservationMessage(message, { id: 'test-extension' }, (value: any) => { response = value; });
+        return response;
+      } },
+      storage: { local: {
+        get: async () => structuredClone(storage),
+        set: async (updates: any) => Object.assign(storage, structuredClone(updates))
+      } }
+    };
+    let foregroundStarted!: () => void;
+    const started = new Promise<void>(resolve => { foregroundStarted = resolve; });
+    let calls = 0;
+    globalThis.fetch = (async (_url: string, init: any) => {
+      calls++;
+      if (calls === 1) {
+        foregroundStarted();
+        return new Promise((_resolve, reject) => {
+          init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        });
+      }
+      return { ok: true, json: async () => ({ answers: {
+        topic__tab_0: { choice: 'Code' }, tab_0: { choice: 'Code' }
+      } }) };
+    }) as any;
+    try {
+      await loadPerspectiveSettings(true);
+      const dashboard = classifyTabs([tab], topic, false, { skipSpeculativeFanout: true });
+      await started;
+      await preclassifyTabInBackground(tab); // Reservation is still held by the dashboard.
+      expect(calls).toBe(1);
+      const interrupt = classifyTabs([{ id: 7201, title: 'New tab', url: 'https://new.example.com' }], topic,
+        false, { skipSpeculativeFanout: true });
+      await Promise.all([dashboard, interrupt]);
+      await new Promise(resolve => setTimeout(resolve, 30));
+      expect(storage.tabClassificationCache.topic[normalizeUrlForCache(tab.url)].source).toBe('ai');
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("dashboard and service worker do not request the same classification concurrently", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'test-key', perspectives: [DEFAULT_PERSPECTIVES[1]],
+      tabClassificationCache: {}
+    };
+    (globalThis as any).chrome = {
+      runtime: { id: 'test-extension', sendMessage: async (message: any) => {
+        let response: any;
+        handleAiReservationMessage(message, { id: 'test-extension' }, (value: any) => { response = value; });
+        return response;
+      } },
+      storage: { local: {
+        get: async (keys: string[]) => Object.fromEntries(keys.filter(k => k in storage).map(k => [k, storage[k]])),
+        set: async (value: any) => Object.assign(storage, value)
+      } }
+    };
+    let started!: () => void;
+    const firstStarted = new Promise<void>(resolve => { started = resolve; });
+    let finish!: (value: any) => void;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      started();
+      return new Promise(resolve => { finish = resolve; });
+    }) as any;
+    const tab = { id: 7111, title: 'Shared Tab', url: 'https://shared.example.com/page' };
+    try {
+      await loadPerspectiveSettings(true);
+      const foreground = classifyTabs([tab], DEFAULT_PERSPECTIVES[1], false);
+      await firstStarted;
+      await preclassifyTabInBackground(tab);
+      expect(calls).toBe(1);
+      finish({ ok: true, json: async () => ({ answers: { tab_0: { choice: DEFAULT_PERSPECTIVES[1].labels[0].name } } }) });
+      await foreground;
+      expect(storage.tabClassificationCache.topic[normalizeUrlForCache(tab.url)].source).toBe('ai');
+    } finally {
+      if (finish) finish({ ok: true, json: async () => ({ answers: {} }) });
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("reservation message accepts batches with more than 100 keys", () => {
+    const keys = Array.from({ length: 150 }, (_, i) => `topic:https://batch-${i}.example.com`);
+    let response: any;
+    const handled = handleAiReservationMessage(
+      { type: 'tabout-ai-claim', owner: 'multi-perspective-test', keys },
+      { id: 'test-extension' },
+      (value: any) => { response = value; }
+    );
+    expect(handled).toBe(true);
+    expect(response).toBeDefined();
+    expect(response.claimed.length).toBe(150);
+
+    // Release
+    handleAiReservationMessage(
+      { type: 'tabout-ai-release', owner: 'multi-perspective-test', keys },
+      { id: 'test-extension' },
+      () => {}
+    );
+  });
+
+  test("handleStorageOnChanged preserves ai-low-confidence and high-confidence from downgrade", async () => {
+    const originalChrome = (globalThis as any).chrome;
+    const urlLow = 'https://low.example.com/item';
+    const urlHigh = 'https://high.example.com/item';
+    const storage: Record<string, any> = {
+      tabClassificationCache_topic: {
+        [urlLow]: { label: 'Code', source: 'ai-low-confidence', confidence: 0.35, timestamp: 100 },
+        [urlHigh]: { label: 'Code', source: 'ai', confidence: 0.95, timestamp: 100 }
+      },
+      tabClassificationCache: {}
+    };
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: async () => structuredClone(storage),
+          set: async (updates: any) => Object.assign(storage, updates)
+        }
+      }
+    };
+
+    try {
+      await loadPerspectiveSettings(true);
+
+      // Attempt to downgrade urlLow to local and urlHigh to ai-low-confidence via storage.onChanged
+      await handleStorageOnChanged({
+        tabClassificationCache_topic: {
+          newValue: {
+            [urlLow]: { label: 'Other', source: 'local', timestamp: 200 },
+            [urlHigh]: { label: 'Other', source: 'ai-low-confidence', confidence: 0.2, timestamp: 200 }
+          }
+        }
+      }, 'local');
+
+      // Check cache in app.js
+      const dummyTabLow = { id: 901, title: 'Low', url: urlLow };
+      const dummyTabHigh = { id: 902, title: 'High', url: urlHigh };
+      const res = await classifyTabs([dummyTabLow, dummyTabHigh], { id: 'topic', labels: [{ name: 'Code' }] });
+
+      expect(res[urlLow].source).toBe('ai-low-confidence');
+      expect(res[urlHigh].source).toBe('ai');
+    } finally {
+      (globalThis as any).chrome = originalChrome;
+    }
+  });
+
+  test("background.js chrome.tabs.onUpdated does not trigger automatic AI preclassification", () => {
+    const bgPath = resolve(__dirname, "../extension/background.js");
+    const bgCode = readFileSync(bgPath, "utf-8");
+
+    // Must update badge on onUpdated but not call preclassifyTabInBackground in the listener body
+    const listenerMatch = bgCode.match(/chrome\.tabs\?\.onUpdated\?\.addListener\s*\(\s*\([^)]*\)\s*=>\s*\{([\s\S]*?)\}\s*\)/);
+    expect(listenerMatch).toBeTruthy();
+    expect(listenerMatch![1]).not.toContain("preclassifyTabInBackground");
+  });
+
+  test("background preclassification loads partitioned cache keys to prevent duplicate requests", async () => {
+    const oldChrome = (globalThis as any).chrome;
+    const oldFetch = globalThis.fetch;
+    const url = normalizeUrlForCache('https://partition-test.example.com');
+    const storage: Record<string, any> = {
+      openRouterApiKey: 'test-key',
+      perspectives: [{ id: 'topic', name: 'Topic', labels: [{ name: 'Code', description: 'Programming' }] }],
+      tabClassificationCache_topic: {
+        [url]: { label: 'Code', source: 'ai', confidence: 0.95 }
+      }
+    };
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: async (keys: any) => {
+            const res: Record<string, any> = {};
+            const keyArr = Array.isArray(keys) ? keys : [keys];
+            for (const k of keyArr) res[k] = storage[k];
+            return res;
+          },
+          set: async (val: any) => Object.assign(storage, val)
+        }
+      }
+    };
+    let calls = 0;
+    globalThis.fetch = (async () => { calls++; return { ok: true, json: async () => ({ answers: {} }) }; }) as any;
+    try {
+      await preclassifyTabInBackground({ id: 8888, title: 'Partition Test', url });
+      // Because it loads tabClassificationCache_topic, it sees existing 'ai' and makes 0 calls!
+      expect(calls).toBe(0);
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("schedulePerspectivePrewarm ignores unprompted idle calls without targetPid", async () => {
+    let prewarmCalled = false;
+    // Calling schedulePerspectivePrewarm() without targetPid returns immediately
+    schedulePerspectivePrewarm();
+    // No timer set and no call
+    expect(prewarmCalled).toBe(false);
+  });
+
+  test("isAiEligibleUrl correctly validates web protocols and rejects local/internal protocols", () => {
+    expect(isAiEligibleUrl("https://example.com")).toBe(true);
+    expect(isAiEligibleUrl("http://localhost:3000")).toBe(true);
+    expect(isAiEligibleUrl("file:///C:/Users/ADMIN/secret.pdf")).toBe(false);
+    expect(isAiEligibleUrl("blob:https://example.com/12345")).toBe(false);
+    expect(isAiEligibleUrl("data:text/html,<h1>Hello</h1>")).toBe(false);
+    expect(isAiEligibleUrl("chrome://settings")).toBe(false);
+    expect(isAiEligibleUrl("chrome-extension://xyz/popup.html")).toBe(false);
+    expect(isAiEligibleUrl("about:blank")).toBe(false);
+    expect(isAiEligibleUrl("")).toBe(false);
+    expect(isAiEligibleUrl(null)).toBe(false);
+
+    expect(bgIsAiEligibleUrl("https://github.com")).toBe(true);
+    expect(bgIsAiEligibleUrl("file:///test.pdf")).toBe(false);
+  });
+
+  test("classifyTabs assigns local fallback but never sends file:// URLs to AI API", async () => {
+    const oldFetch = globalThis.fetch;
+    const oldChrome = (globalThis as any).chrome;
+    let fetchCalled = false;
+
+    globalThis.fetch = (async () => {
+      fetchCalled = true;
+      return { ok: true, json: async () => ({ answers: {} }) };
+    }) as any;
+
+    const storage: Record<string, any> = {
+      openRouterApiKey: "sk-or-v1-valid-test-key",
+      aiAuthBlocked: false
+    };
+
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: async (keys: any) => {
+            const res: Record<string, any> = {};
+            const keyArr = Array.isArray(keys) ? keys : [keys];
+            for (const k of keyArr) res[k] = storage[k];
+            return res;
+          },
+          set: async (val: any) => Object.assign(storage, val)
+        }
+      },
+      runtime: { sendMessage: async () => ({ claimed: [] }) }
+    };
+
+    try {
+      const perspective = {
+        id: "doc-test",
+        name: "Docs",
+        labels: ["PDF", "Web", "Khác"]
+      };
+      const tabs = [
+        { id: 1, title: "Private Secret Resume", url: "file:///C:/Users/ADMIN/resume.pdf" }
+      ];
+
+      const result = await classifyTabs(tabs, perspective, false, { silent: true });
+      // file:// tab must receive local fallback classification without calling AI API!
+      expect(fetchCalled).toBe(false);
+      expect(result["file:///C:/Users/ADMIN/resume.pdf"]).toBeDefined();
+      expect(result["file:///C:/Users/ADMIN/resume.pdf"].source).toBe("local");
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
+
+  test("classifyTabs trips aiAuthBlocked circuit breaker on HTTP 403 Forbidden", async () => {
+    const oldFetch = globalThis.fetch;
+    const oldChrome = (globalThis as any).chrome;
+
+    globalThis.fetch = (async () => {
+      return {
+        ok: false,
+        status: 403,
+        statusText: "Forbidden",
+        headers: { get: () => null },
+        json: async () => ({ error: { message: "Account suspended or key forbidden" } })
+      };
+    }) as any;
+
+    const storage: Record<string, any> = {
+      openRouterApiKey: "sk-or-v1-forbidden-test-key",
+      aiAuthBlocked: false
+    };
+
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: async () => storage,
+          set: async (val: any) => Object.assign(storage, val)
+        }
+      }
+    };
+
+    try {
+      await loadPerspectiveSettings(true);
+      const perspective = {
+        id: "403-test",
+        name: "Test 403",
+        labels: ["A", "B", "Khác"]
+      };
+      const tabs = [
+        { id: 2, title: "Example Domain", url: "https://example.com" }
+      ];
+
+      await classifyTabs(tabs, perspective, true, { silent: true });
+      expect(storage.aiAuthBlocked).toBe(true);
+    } finally {
+      globalThis.fetch = oldFetch;
+      (globalThis as any).chrome = oldChrome;
+    }
+  });
 });
+
 
 
 

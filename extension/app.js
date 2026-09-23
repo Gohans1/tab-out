@@ -1107,13 +1107,14 @@ let activePerspectiveId = 'domain';
 let isLocalSettingUpdate = false;
 const getLocalKey = () => (typeof window !== 'undefined' && window.LOCAL_OPENROUTER_KEY) || '';
 let openRouterApiKey = getLocalKey();
+let aiAuthBlocked = false;
 let tabClassificationCache = {};
 let isPerspectivesLoaded = false;
 
 async function loadPerspectiveSettings(force = false) {
   if (isPerspectivesLoaded && !force) return;
   try {
-    const res = await chrome.storage.local.get(['perspectives', 'activePerspectiveId', 'openRouterApiKey', 'classifierApiKey', 'tabClassificationCache']);
+    const res = await chrome.storage.local.get(['perspectives', 'activePerspectiveId', 'openRouterApiKey', 'classifierApiKey', 'aiAuthBlocked', 'tabClassificationCache']);
     if (res.perspectives && Array.isArray(res.perspectives) && res.perspectives.length > 0) {
       currentPerspectives = res.perspectives.map(p => ({
         ...p,
@@ -1130,6 +1131,7 @@ async function loadPerspectiveSettings(force = false) {
     } else {
       openRouterApiKey = getLocalKey();
     }
+    aiAuthBlocked = res.aiAuthBlocked === true;
     if (res.tabClassificationCache && typeof res.tabClassificationCache === 'object') {
       tabClassificationCache = { ...res.tabClassificationCache };
     }
@@ -1281,6 +1283,18 @@ const TRACKING_PARAMS = new Set([
   'oq', 'aqs', 'sourceid', 'ved', 'ei'
 ]);
 
+/**
+ * isAiEligibleUrl(url)
+ *
+ * Ensures only public or intranet web resources (http://, https://)
+ * are ever sent to external AI decision engines. Prevents local files
+ * (file://), extension assets, blobs, and internal browser states from leaking.
+ */
+function isAiEligibleUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  return url.startsWith('http://') || url.startsWith('https://');
+}
+
 const normalizedUrlCache = new Map();
 
 /**
@@ -1382,8 +1396,13 @@ async function saveClassificationCacheAtomic(pid, newEntries) {
       if (newEntries && typeof newEntries === 'object') {
         for (const [urlKey, entry] of Object.entries(newEntries)) {
           const existing = partitionCache[urlKey];
-          // Protect existing 'ai' entries from being downgraded to 'local', 'domain-ai', or 'ai-low-confidence'
-          if (existing && getCacheSource(existing) === 'ai' && getCacheSource(entry) !== 'ai') {
+          // A completed AI decision must not be replaced by a stale local placeholder.
+          if (existing && ['ai', 'ai-low-confidence'].includes(getCacheSource(existing)) &&
+              !['ai', 'ai-low-confidence'].includes(getCacheSource(entry))) {
+            continue;
+          }
+          // A completed high-confidence AI decision must not be downgraded to low confidence.
+          if (existing && getCacheSource(existing) === 'ai' && getCacheSource(entry) === 'ai-low-confidence') {
             continue;
           }
           // If both are 'ai' and existing has higher confidence, preserve higher confidence
@@ -1395,7 +1414,6 @@ async function saveClassificationCacheAtomic(pid, newEntries) {
           partitionCache[urlKey] = {
             ...(typeof existing === 'object' ? existing : {}),
             ...entry,
-            hygieneScore: entry.hygieneScore !== undefined ? entry.hygieneScore : existing?.hygieneScore,
             secondaryLabel: entry.secondaryLabel !== undefined ? entry.secondaryLabel : existing?.secondaryLabel
           };
         }
@@ -1495,12 +1513,21 @@ function getDomainFallbackLabel(tab, cache) {
 
 const inFlightUrls = new Set();
 
-const HYGIENE_SCORE_CRITERIA = [
-  'Persistent important active workspace, primary application, document being edited, or critical reference',
-  'Secondary reference, documentation, article being read, or active task context',
-  'Browsing, search results, social feed, or non-critical reading',
-  'Temporary search query, disposable lookup, ad, redirect, promotional page, or duplicate tab safe to close'
-];
+async function claimAiKeys(keys, owner) {
+  if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return keys;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'tabout-ai-claim', keys, owner });
+    return Array.isArray(response?.claimed) ? response.claimed : [];
+  } catch {
+    return keys; // No worker is available to make a competing request.
+  }
+}
+
+async function releaseAiKeys(keys, owner) {
+  if (!keys.length || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
+  try { await chrome.runtime.sendMessage({ type: 'tabout-ai-release', keys, owner }); } catch {}
+}
+
 
 /**
  * classifyTabs(tabs, perspective, forceAi)
@@ -1526,13 +1553,14 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
 
   // 1. Identify which tabs genuinely need AI decision pass BEFORE mutating cache
   const toClassify = (forceAi
-    ? tabs
+    ? tabs.filter(t => isAiEligibleUrl(t?.url))
     : tabs.filter(t => {
+        if (!isAiEligibleUrl(t?.url)) return false;
         const normUrl = normalizeUrlForCache(t.url) || t.url || '';
         if (!normUrl) return false;
         const entry = cache[normUrl];
         if (!entry) return true;
-        if (getCacheSource(entry) === 'ai') return false;
+        if (['ai', 'ai-low-confidence'].includes(getCacheSource(entry))) return false;
         const isFailedRecently = entry.lastAiAttempt && (Date.now() - entry.lastAiAttempt < (entry.cooldownMs || 15000));
         return !isFailedRecently;
       })
@@ -1543,23 +1571,25 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
 
   // 2. Ensure every tab has at least an instant local fallback in memory
   let hasNewLocalFallback = false;
+  const localFallbackUpdates = {};
   for (const tab of tabs) {
     const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
     if (normUrl && !cache[normUrl]) {
       const localLabel = localFallbackClassify(tab, perspective.labels);
       cache[normUrl] = { label: localLabel, source: 'local', timestamp: Date.now() };
+      localFallbackUpdates[normUrl] = cache[normUrl];
       hasNewLocalFallback = true;
     }
   }
 
   // If no OpenRouter key is set or no tabs need AI, return cache immediately without unnecessary I/O
-  if (!openRouterApiKey || toClassify.length === 0) {
+  if (!openRouterApiKey || aiAuthBlocked || toClassify.length === 0) {
     if (hasNewLocalFallback) {
       try {
-        await saveClassificationCacheAtomic(pid, cache);
+        await saveClassificationCacheAtomic(pid, localFallbackUpdates);
       } catch {}
     }
-    return cache;
+    return tabClassificationCache[pid] || cache;
   }
 
   // Only abort previous active foreground request if this pass genuinely has tabs to classify
@@ -1574,6 +1604,8 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
 
   // Mark pending URLs as in-flight so concurrent calls never double-fetch or drop
   const pendingKeys = [];
+  const reservationOwner = `dashboard-${Date.now()}-${Math.random()}`;
+  const reservedKeys = [];
   for (const t of toClassify) {
     const normUrl = normalizeUrlForCache(t.url) || t.url || '';
     if (normUrl) {
@@ -1605,32 +1637,57 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
     // Build criteria options for OpenRouter typesafe decision choice
     const criteria = buildChoiceCriteria(perspective);
 
-    // Prepare speculative fan-out criteria for inactive semantic perspectives
-    // Covers up to 2 high-priority inactive perspectives in foreground without latency overhead
-    const inactiveSemanticPerspectives = (options?.skipSpeculativeFanout)
-      ? []
-      : ((typeof currentPerspectives !== 'undefined' && Array.isArray(currentPerspectives))
-          ? currentPerspectives.filter(p => p && p.id !== 'domain' && p.id !== pid && p.labels && p.labels.length > 0).slice(0, 2)
-          : []);
-    const inactiveCriteriaByPid = new Map();
-    for (const otherP of inactiveSemanticPerspectives) {
-      inactiveCriteriaByPid.set(otherP.id, buildChoiceCriteria(otherP));
-    }
+    // Strict On-Demand: Only classify tabs for the requested perspective (zero token waste)
 
-    // Batch tabs into groups of up to 12 tabs for lower latency and better focus
-    const batchSize = 12;
+    // Bound each request while sharing its state and criteria across tabs.
+    const batchSize = 24;
     const batches = [];
     for (let i = 0; i < uniqueTabs.length; i += batchSize) {
       batches.push(uniqueTabs.slice(i, i + batchSize));
     }
 
-    // Process batches with bounded concurrency (max 3 concurrent requests) to prevent 429 rate limits
-    const maxConcurrency = 3;
+    // Send batches sequentially to avoid bursts against the Decisions endpoint.
+    const maxConcurrency = 1;
     for (let b = 0; b < batches.length; b += maxConcurrency) {
+      if (aiAuthBlocked || activeSignal?.aborted) break;
       const chunk = batches.slice(b, b + maxConcurrency);
-      await Promise.all(chunk.map(async (batch) => {
+      await Promise.all(chunk.map(async (candidateBatch) => {
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+          try {
+            const partitionKey = `tabClassificationCache_${pid}`;
+            const res = await chrome.storage.local.get([partitionKey, 'tabClassificationCache']);
+            const latest = res[partitionKey] || res.tabClassificationCache?.[pid];
+            if (latest && typeof latest === 'object') {
+              tabClassificationCache[pid] = { ...tabClassificationCache[pid], ...latest };
+            }
+          } catch {}
+        }
+
+        const activeBatch = candidateBatch.filter(tab => {
+          const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
+          const entry = tabClassificationCache[pid]?.[normUrl];
+          return !entry || !['ai', 'ai-low-confidence'].includes(getCacheSource(entry));
+        });
+        if (!activeBatch.length) return;
+
+        const candidateKeys = activeBatch.map(tab => {
+          const url = normalizeUrlForCache(tab.url) || tab.url || '';
+          return `${pid}:${url}`;
+        });
+        const claimedKeys = await claimAiKeys([...new Set(candidateKeys)], reservationOwner);
+        const claimed = new Set(claimedKeys);
+        reservedKeys.push(...claimedKeys);
+        for (const key of claimedKeys) inFlightUrls.add(key);
+        const batch = activeBatch.filter(tab => claimed.has(`${pid}:${normalizeUrlForCache(tab.url) || tab.url || ''}`));
+        if (!batch.length) {
+          await releaseAiKeys(claimedKeys, reservationOwner);
+          for (const key of claimedKeys) inFlightUrls.delete(key);
+          reservedKeys.splice(reservedKeys.length - claimedKeys.length, claimedKeys.length);
+          return;
+        }
         const questions = {};
         const state = { tabs: {} };
+        const batchUpdates = {};
 
         batch.forEach((tab, idx) => {
           const qKey = `tab_${idx}`;
@@ -1647,25 +1704,6 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
             instructions: `Categorize \`tabs.${qKey}\` into the single most fitting category based on title, domain, and criteria.`,
             criteria
           };
-          questions[`hygiene__${qKey}`] = {
-            type: 'score',
-            instructions: `Rate if \`tabs.${qKey}\` is disposable or transient: 0 for persistent important active workspace, up to 3 for temporary search/disposable lookup/duplicate tab safe to close.`,
-            criteria: HYGIENE_SCORE_CRITERIA
-          };
-
-          // Speculative fan-out: also evaluate up to 1 inactive semantic perspective in parallel
-          for (const otherP of inactiveSemanticPerspectives) {
-            const otherCache = tabClassificationCache[otherP.id] || {};
-            const otherEntry = otherCache[cleanUrl];
-            if (!otherEntry || getCacheSource(otherEntry) !== 'ai') {
-              const otherQKey = `${otherP.id}__${qKey}`;
-              questions[otherQKey] = {
-                type: 'choice',
-                instructions: `Categorize \`tabs.${qKey}\` into the single most fitting category for "${otherP.name || otherP.id}" based on criteria.`,
-                criteria: inactiveCriteriaByPid.get(otherP.id)
-              };
-            }
-          }
         });
 
         let perRequestSignal;
@@ -1679,11 +1717,12 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
         }
 
         try {
+          const requestKey = openRouterApiKey;
           const response = await fetch('https://openrouter.ai/api/alpha/decisions', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${openRouterApiKey}`,
+              'Authorization': `Bearer ${requestKey}`,
               'HTTP-Referer': 'https://github.com/Gohans1/tab-out',
               'X-Title': 'Tab Out'
             },
@@ -1705,6 +1744,13 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
             } else if (response.status === 400 || response.status === 402 || response.status === 422) {
               cooldownMs = 300000;
             }
+            if (response.status === 401 || response.status === 402 || response.status === 403) {
+              const latest = await chrome.storage.local.get('openRouterApiKey');
+              if (latest.openRouterApiKey === requestKey) {
+                aiAuthBlocked = true;
+                await chrome.storage.local.set({ aiAuthBlocked: true });
+              }
+            }
             const httpErr = new Error(`OpenRouter decisions HTTP ${response.status}`);
             httpErr.cooldownMs = cooldownMs;
             throw httpErr;
@@ -1712,7 +1758,6 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
 
           const data = await response.json();
           const answers = data.answers || {};
-          const otherPerspectiveUpdates = {};
 
           batch.forEach((tab, idx) => {
             const qKey = `tab_${idx}`;
@@ -1723,8 +1768,6 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
             const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
             if (!normUrl) return;
 
-            const hygieneAns = answers[`hygiene__${qKey}`];
-            const hygieneScore = (hygieneAns && typeof hygieneAns.score === 'number') ? hygieneAns.score : undefined;
 
             // Robust case-insensitive and trimmed match for returned choice
             const validActiveKeys = Object.keys(criteria);
@@ -1747,14 +1790,15 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
               cache[normUrl] = {
                 label: matchedLabel,
                 secondaryLabel: secondaryLabel || undefined,
-                hygieneScore: hygieneScore !== undefined ? hygieneScore : cache[normUrl]?.hygieneScore,
+
                 source: isHighConfidence ? 'ai' : 'ai-low-confidence',
                 confidence,
                 cooldownMs: isHighConfidence ? undefined : 60000,
                 lastAiAttempt: isHighConfidence ? undefined : Date.now(),
                 timestamp: Date.now()
               };
-            } else if (!cache[normUrl] || getCacheSource(cache[normUrl]) !== 'ai') {
+              batchUpdates[normUrl] = cache[normUrl];
+            } else if (!cache[normUrl] || !['ai', 'ai-low-confidence'].includes(getCacheSource(cache[normUrl]))) {
               const fallback = localFallbackClassify(tab, perspective.labels);
               cache[normUrl] = {
                 label: fallback,
@@ -1763,53 +1807,9 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
                 lastAiAttempt: Date.now(),
                 timestamp: Date.now()
               };
-            }
-
-            // Also harvest answers for inactive perspectives from speculative fan-out
-            for (const otherP of inactiveSemanticPerspectives) {
-              const otherQKey = `${otherP.id}__${qKey}`;
-              const otherAns = answers[otherQKey];
-              if (!otherAns?.choice) continue;
-              const otherChoice = otherAns.choice;
-              const otherConfidence = typeof otherAns.confidence === 'number' ? otherAns.confidence : 1.0;
-              const otherHighConf = otherConfidence >= 0.45;
-              const otherCrit = inactiveCriteriaByPid.get(otherP.id);
-              if (!otherCrit) continue;
-              const validOtherKeys = Object.keys(otherCrit);
-              const otherMatched = validOtherKeys.find(l => l.trim().toLowerCase() === String(otherChoice).trim().toLowerCase());
-              if (otherMatched) {
-                let otherSecondary = null;
-                if (otherAns?.probabilities && typeof otherAns.probabilities === 'object') {
-                  const sorted = Object.entries(otherAns.probabilities)
-                    .filter(([k]) => k.trim().toLowerCase() !== String(otherChoice).trim().toLowerCase())
-                    .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0));
-                  if (sorted[0] && Number(sorted[0][1]) >= 0.20) {
-                    const validOther = validOtherKeys.find(l => l.trim().toLowerCase() === String(sorted[0][0]).trim().toLowerCase());
-                    if (validOther) otherSecondary = validOther;
-                  }
-                }
-
-                if (!otherPerspectiveUpdates[otherP.id]) otherPerspectiveUpdates[otherP.id] = {};
-                otherPerspectiveUpdates[otherP.id][normUrl] = {
-                  label: otherMatched,
-                  secondaryLabel: otherSecondary || undefined,
-                  hygieneScore: hygieneScore !== undefined ? hygieneScore : undefined,
-                  source: otherHighConf ? 'ai' : 'ai-low-confidence',
-                  confidence: otherConfidence,
-                  cooldownMs: otherHighConf ? undefined : 60000,
-                  lastAiAttempt: otherHighConf ? undefined : Date.now(),
-                  timestamp: Date.now()
-                };
-              }
+              batchUpdates[normUrl] = cache[normUrl];
             }
           });
-
-          // Save inactive perspective updates atomically without blocking
-          for (const [otherPid, items] of Object.entries(otherPerspectiveUpdates)) {
-            try {
-              await saveClassificationCacheAtomic(otherPid, items);
-            } catch {}
-          }
         } catch (batchErr) {
           // If aborted by user switching perspectives, do not penalize tabs with cooldown!
           if (batchErr?.name === 'AbortError' || activeSignal?.aborted) {
@@ -1819,7 +1819,7 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
           const cooldownMs = (batchErr && batchErr.cooldownMs) ? batchErr.cooldownMs : 15000;
           batch.forEach(tab => {
             const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
-            if (normUrl && (!cache[normUrl] || getCacheSource(cache[normUrl]) !== 'ai')) {
+            if (normUrl && (!cache[normUrl] || !['ai', 'ai-low-confidence'].includes(getCacheSource(cache[normUrl])))) {
               const fallback = localFallbackClassify(tab, perspective.labels);
               cache[normUrl] = {
                 label: fallback,
@@ -1828,9 +1828,14 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
                 lastAiAttempt: Date.now(),
                 timestamp: Date.now()
               };
+              batchUpdates[normUrl] = cache[normUrl];
             }
           });
         }
+        if (Object.keys(batchUpdates).length) await saveClassificationCacheAtomic(pid, batchUpdates);
+        await releaseAiKeys(claimedKeys, reservationOwner);
+        for (const key of claimedKeys) inFlightUrls.delete(key);
+        reservedKeys.splice(reservedKeys.length - claimedKeys.length, claimedKeys.length);
       }));
     }
 
@@ -1840,9 +1845,21 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
     }
     console.warn('[tab-out] OpenRouter ~typesafe/jev-latest request fell back to local classifier:', err);
   } finally {
+    if (hasNewLocalFallback) {
+      for (const url of Object.keys(localFallbackUpdates)) {
+        if (['ai', 'ai-low-confidence'].includes(getCacheSource(tabClassificationCache[pid]?.[url]))) {
+          delete localFallbackUpdates[url];
+        }
+      }
+      if (Object.keys(localFallbackUpdates).length) {
+        try { await saveClassificationCacheAtomic(pid, localFallbackUpdates); } catch {}
+      }
+    }
+    await releaseAiKeys(reservedKeys, reservationOwner);
     for (const key of pendingKeys) {
       inFlightUrls.delete(key);
     }
+    for (const key of reservedKeys) inFlightUrls.delete(key);
     const hasActiveInFlight = Array.from(inFlightUrls).some(k => k.startsWith(`${activePerspectiveId}:`));
     if (!hasActiveInFlight && typeof document !== 'undefined') {
       const l = document.getElementById('perspectiveLoader');
@@ -1853,12 +1870,9 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
         d.classList.add('ready');
       }
     }
-    try {
-      await saveClassificationCacheAtomic(pid, cache);
-    } catch {}
   }
 
-  return cache;
+  return tabClassificationCache[pid] || cache;
 }
 
 /**
@@ -1868,7 +1882,7 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
  * Seamlessly updates UI when AI decisions complete without recursive storms.
  */
 function triggerBackgroundClassification(tabs, perspective) {
-  if (!tabs || tabs.length === 0 || !openRouterApiKey) return;
+  if (!tabs || tabs.length === 0 || !openRouterApiKey || aiAuthBlocked) return;
   const pid = perspective.id;
 
   (async () => {
@@ -1880,7 +1894,7 @@ function triggerBackgroundClassification(tabs, perspective) {
         prevLabels.set(norm, getCacheLabel(cacheBefore[norm]));
       }
 
-      await classifyTabs(tabs, perspective, true /* forceAi */, { silent: true });
+      await classifyTabs(tabs, perspective, false, { silent: false });
 
       // Only re-render if user is still on this perspective AND at least one label actually changed!
       if (activePerspectiveId === pid) {
@@ -1904,275 +1918,20 @@ function triggerBackgroundClassification(tabs, perspective) {
   })();
 }
 
-let prewarmTimer = null;
-
-let isPrewarmingMultiPerspective = false;
-
 /**
- * prewarmMultiPerspective(realTabs, inactivePerspectives)
- *
- * Utilizes TypeSafe Jev Multi-Question Decision batching to prewarm multiple
- * inactive perspectives concurrently in a single HTTP round-trip.
+ * prewarmMultiPerspective()
+ * Deprecated: Strict on-demand architecture replaces speculative prewarming to eliminate token waste.
  */
-async function prewarmMultiPerspective(realTabs, inactivePerspectives) {
-  if (isPrewarmingMultiPerspective) return;
-  if (!openRouterApiKey || !realTabs || realTabs.length === 0) return;
-  const targetPerspectives = (inactivePerspectives && inactivePerspectives.length > 0)
-    ? inactivePerspectives
-    : ((typeof currentPerspectives !== 'undefined' && Array.isArray(currentPerspectives))
-        ? currentPerspectives.filter(p => p && p.id !== 'domain' && p.id !== activePerspectiveId && p.labels && p.labels.length > 0)
-        : []);
-  if (targetPerspectives.length === 0) return;
-  isPrewarmingMultiPerspective = true;
-
-  const validTabs = [];
-  const questions = {};
-  const criteriaByPid = new Map();
-  for (const p of targetPerspectives) {
-    if (!p.labels || p.labels.length === 0) continue;
-    criteriaByPid.set(p.id, buildChoiceCriteria(p));
-  }
-
-  // Collect up to 12 tabs that need AI classification in at least one inactive perspective
-  const candidateTabs = [];
-  for (const tab of realTabs) {
-    const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
-    if (!normUrl) continue;
-    let needsAny = false;
-    for (const p of targetPerspectives) {
-      const pCache = tabClassificationCache[p.id] || {};
-      const entry = pCache[normUrl];
-      const isFailedRecently = entry?.lastAiAttempt && (Date.now() - entry.lastAiAttempt < (entry.cooldownMs || 15000));
-      if (!isFailedRecently && (!entry || getCacheSource(entry) !== 'ai')) {
-        needsAny = true;
-        break;
-      }
-    }
-    if (needsAny) {
-      candidateTabs.push(tab);
-      if (candidateTabs.length >= 12) break;
-    }
-  }
-
-  if (candidateTabs.length === 0) {
-    isPrewarmingMultiPerspective = false;
-    return;
-  }
-
-  candidateTabs.forEach((tab, tabIdx) => {
-    const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
-    const cleanTitle = (tab.title || '').replace(/[\r\n]+/g, ' ').slice(0, 140);
-    const cleanUrl = normUrl.slice(0, 140);
-    const tabKey = `tab_${tabIdx}`;
-
-    let hasQuestionForTab = false;
-    for (const p of targetPerspectives) {
-      const pCache = tabClassificationCache[p.id] || {};
-      const entry = pCache[normUrl];
-      const isFailedRecently = entry?.lastAiAttempt && (Date.now() - entry.lastAiAttempt < (entry.cooldownMs || 15000));
-      if (!isFailedRecently && (!entry || getCacheSource(entry) !== 'ai')) {
-        const criteria = criteriaByPid.get(p.id);
-        if (criteria) {
-          questions[`${p.id}__${tabKey}`] = {
-            type: 'choice',
-            instructions: `Categorize \`tabs.${tabKey}\` into the single most fitting category for "${p.name || p.id}" based on criteria.`,
-            criteria
-          };
-          hasQuestionForTab = true;
-        }
-      }
-    }
-    if (hasQuestionForTab) {
-      questions[`hygiene__${tabKey}`] = {
-        type: 'score',
-        instructions: `Rate if \`tabs.${tabKey}\` is disposable or transient: 0 for persistent important active workspace, up to 3 for temporary search/disposable lookup/duplicate tab safe to close.`,
-        criteria: HYGIENE_SCORE_CRITERIA
-      };
-      validTabs.push({ tabKey, normUrl, cleanTitle, cleanUrl });
-    }
-  });
-
-  if (validTabs.length === 0 || Object.keys(questions).length === 0) {
-    isPrewarmingMultiPerspective = false;
-    return;
-  }
-
-  const state = { tabs: {} };
-  validTabs.forEach(t => {
-    state.tabs[t.tabKey] = {
-      title: t.cleanTitle,
-      url: t.normUrl.slice(0, 300),
-      domain: extractHostname(t.normUrl)
-    };
-  });
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = setTimeout(() => controller?.abort(), 12000);
-
-  try {
-    const response = await fetch('https://openrouter.ai/api/alpha/decisions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openRouterApiKey}`,
-        'HTTP-Referer': 'https://github.com/Gohans1/tab-out',
-        'X-Title': 'Tab Out Perspective Prewarm'
-      },
-      signal: controller?.signal,
-      body: JSON.stringify({
-        model: '~typesafe/jev-latest',
-        state,
-        questions
-      })
-    });
-
-    if (!response.ok) {
-      let cooldownMs = 15000;
-      const retryAfter = Number(response.headers?.get?.('retry-after'));
-      if (!isNaN(retryAfter) && retryAfter > 0) {
-        cooldownMs = Math.min(Math.max(retryAfter * 1000, 5000), 300000);
-      } else if (response.status === 401 || response.status === 403 || response.status === 429 || response.status === 529) {
-        cooldownMs = 60000;
-      } else if (response.status === 400 || response.status === 402 || response.status === 422) {
-        cooldownMs = 300000;
-      }
-      const failedByPid = {};
-      for (const t of validTabs) {
-        for (const p of targetPerspectives) {
-          const qKey = `${p.id}__${t.tabKey}`;
-          if (questions[qKey]) {
-            if (!tabClassificationCache[p.id]) tabClassificationCache[p.id] = {};
-            const entry = tabClassificationCache[p.id][t.normUrl];
-            if (!entry || getCacheSource(entry) !== 'ai') {
-              const updatedEntry = {
-                ...(typeof entry === 'object' ? entry : {}),
-                label: getCacheLabel(entry) || 'Khác',
-                source: getCacheSource(entry) || 'local',
-                cooldownMs,
-                lastAiAttempt: Date.now(),
-                timestamp: Date.now()
-              };
-              tabClassificationCache[p.id][t.normUrl] = updatedEntry;
-              if (!failedByPid[p.id]) failedByPid[p.id] = {};
-              failedByPid[p.id][t.normUrl] = updatedEntry;
-            }
-          }
-        }
-      }
-      for (const [failedPid, items] of Object.entries(failedByPid)) {
-        try {
-          await saveClassificationCacheAtomic(failedPid, items);
-        } catch {}
-      }
-      return;
-    }
-    const data = await response.json();
-    const answers = data.answers || {};
-
-    const updatesByPid = {};
-    for (const [qKey, ans] of Object.entries(answers)) {
-      const choice = ans?.choice;
-      if (!choice) continue;
-      const lastSep = qKey.lastIndexOf('__');
-      if (lastSep === -1) continue;
-      const pid = qKey.slice(0, lastSep);
-      const tabKey = qKey.slice(lastSep + 2);
-
-      const tabInfo = validTabs.find(t => t.tabKey === tabKey);
-      if (!tabInfo) continue;
-      const criteria = criteriaByPid.get(pid);
-      if (!criteria) continue;
-
-      const validNames = Object.keys(criteria);
-      const matched = validNames.find(n => n.trim().toLowerCase() === String(choice).trim().toLowerCase());
-      if (!matched) continue;
-
-      const confidence = typeof ans?.confidence === 'number' ? ans.confidence : 1.0;
-      const isHighConfidence = confidence >= 0.45;
-
-      let secondaryLabel = null;
-      if (ans?.probabilities && typeof ans.probabilities === 'object') {
-        const sorted = Object.entries(ans.probabilities)
-          .filter(([k]) => k.trim().toLowerCase() !== String(choice).trim().toLowerCase())
-          .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0));
-        if (sorted[0] && Number(sorted[0][1]) >= 0.20) {
-          const validOther = validNames.find(l => l.trim().toLowerCase() === String(sorted[0][0]).trim().toLowerCase());
-          if (validOther) secondaryLabel = validOther;
-        }
-      }
-
-      const hygieneAns = answers[`hygiene__${tabKey}`];
-      const hygieneScore = (hygieneAns && typeof hygieneAns.score === 'number') ? hygieneAns.score : undefined;
-
-      if (!updatesByPid[pid]) updatesByPid[pid] = {};
-      updatesByPid[pid][tabInfo.normUrl] = {
-        label: matched,
-        secondaryLabel: secondaryLabel || undefined,
-        hygieneScore: hygieneScore !== undefined ? hygieneScore : undefined,
-        source: isHighConfidence ? 'ai' : 'ai-low-confidence',
-        confidence,
-        cooldownMs: isHighConfidence ? undefined : 60000,
-        lastAiAttempt: isHighConfidence ? undefined : Date.now(),
-        timestamp: Date.now()
-      };
-    }
-
-    for (const [pid, newItems] of Object.entries(updatesByPid)) {
-      await saveClassificationCacheAtomic(pid, newItems);
-      if (activePerspectiveId === pid) {
-        await renderStaticDashboard({ skipBackgroundAi: true, inMemoryOnly: true });
-      }
-    }
-  } catch (err) {
-    // Silent fail in idle prewarm
-  } finally {
-    clearTimeout(timeoutId);
-    isPrewarmingMultiPerspective = false;
-  }
+async function prewarmMultiPerspective() {
+  return;
 }
 
 /**
  * schedulePerspectivePrewarm()
- *
- * Runs non-blocking pre-warming of inactive perspectives during browser idle time.
- * Populates cache ahead of user clicks so switching perspective is 0ms instant.
- * Uses snappy 80ms debounce on hover to initiate request before click.
+ * Deprecated: Strict on-demand architecture replaces speculative hover prewarming to eliminate token waste.
  */
-function schedulePerspectivePrewarm(targetPid = null) {
-  if (typeof openRouterApiKey === 'undefined' || !openRouterApiKey) return;
-  if (prewarmTimer) {
-    if (typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function') {
-      window.cancelIdleCallback(prewarmTimer);
-    } else if (typeof clearTimeout !== 'undefined') {
-      clearTimeout(prewarmTimer);
-    }
-    prewarmTimer = null;
-  }
-
-  const runner = async () => {
-    if (typeof currentPerspectives === 'undefined' || !Array.isArray(currentPerspectives)) return;
-    const inactivePerspectives = currentPerspectives.filter(
-      p => p.id !== 'domain' && p.id !== activePerspectiveId
-    );
-    if (inactivePerspectives.length === 0) return;
-
-    if (targetPid) {
-      inactivePerspectives.sort((a, b) => (a.id === targetPid ? -1 : b.id === targetPid ? 1 : 0));
-    }
-
-    const realTabs = typeof getRealTabs === 'function' ? getRealTabs() : [];
-    if (realTabs.length === 0) return;
-
-    await prewarmMultiPerspective(realTabs, inactivePerspectives);
-  };
-
-  // If triggered by hover on a specific perspective, kick off in 80ms to lead user click
-  if (targetPid && typeof setTimeout !== 'undefined') {
-    prewarmTimer = setTimeout(() => runner(), 80);
-  } else if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
-    prewarmTimer = window.requestIdleCallback(() => runner(), { timeout: 2000 });
-  } else if (typeof setTimeout !== 'undefined') {
-    prewarmTimer = setTimeout(() => runner(), 800);
-  }
+function schedulePerspectivePrewarm() {
+  return;
 }
 
 function renderPerspectiveRail() {
@@ -2642,7 +2401,7 @@ async function renderStaticDashboard(options = {}) {
             uncachedTabs.push(tab);
           }
         }
-      } else if (getCacheSource(entry) !== 'ai') {
+      } else if (!['ai', 'ai-low-confidence'].includes(getCacheSource(entry))) {
         // Upgrade local heuristics and domain-ai placeholders to true AI in background
         if (!skipBackgroundAi && !inFlightUrls.has(inFlightKey) && !isFailedRecently) {
           uncachedTabs.push(tab);
@@ -2824,11 +2583,6 @@ async function renderStaticDashboard(options = {}) {
 
   // --- Check for duplicate Tab Out tabs ---
   checkTabOutDupes();
-
-  // --- Pre-warm inactive perspectives in background idle time ---
-  if (!skipBackgroundAi && openRouterApiKey) {
-    schedulePerspectivePrewarm();
-  }
 }
 
 /**
@@ -3752,15 +3506,14 @@ if (typeof chrome !== 'undefined' && chrome.tabs) {
 }
 
 // Cross-tab sync for "Saved for later", Perspectives, and Tab Classification Cache
-if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-  chrome.storage.onChanged.addListener(async (changes, areaName) => {
-    if (areaName === 'local') {
+async function handleStorageOnChanged(changes, areaName) {
+  if (areaName === 'local') {
       if (changes.deferred) {
         if (animatingDeferredIds.size === 0) {
           renderDeferredColumn();
         }
       }
-      if (changes.perspectives || changes.activePerspectiveId || changes.openRouterApiKey || changes.classifierApiKey) {
+      if (changes.perspectives || changes.activePerspectiveId || changes.openRouterApiKey || changes.classifierApiKey || changes.aiAuthBlocked) {
         if (isLocalSettingUpdate) return;
         await loadPerspectiveSettings(true);
         await renderStaticDashboard();
@@ -3796,8 +3549,13 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)
               const prevSource = getCacheSource(prev);
               const newSource = getCacheSource(entry);
 
-              // Never overwrite existing 'ai' with non-'ai'
-              if (prevSource === 'ai' && newSource !== 'ai') {
+              // Never overwrite completed AI decisions ('ai' or 'ai-low-confidence') with non-AI placeholders
+              if (['ai', 'ai-low-confidence'].includes(prevSource) && !['ai', 'ai-low-confidence'].includes(newSource)) {
+                continue;
+              }
+
+              // Never downgrade a high-confidence AI decision to low confidence
+              if (prevSource === 'ai' && newSource === 'ai-low-confidence') {
                 continue;
               }
 
@@ -3813,7 +3571,6 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)
               tabClassificationCache[pid][urlKey] = {
                 ...(typeof prev === 'object' ? prev : {}),
                 ...entry,
-                hygieneScore: entry.hygieneScore !== undefined ? entry.hygieneScore : prev?.hygieneScore,
                 secondaryLabel: entry.secondaryLabel !== undefined ? entry.secondaryLabel : prev?.secondaryLabel
               };
 
@@ -3829,7 +3586,10 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged)
         }
       }
     }
-  });
+  }
+
+if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener(handleStorageOnChanged);
 }
 
 /* ----------------------------------------------------------------
@@ -3910,8 +3670,9 @@ if (typeof document !== 'undefined') {
   document.getElementById('apiKeyForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const key = document.getElementById('apiKeyInput')?.value.trim() || '';
+    if (key !== openRouterApiKey) aiAuthBlocked = false;
     openRouterApiKey = key;
-    await chrome.storage.local.set({ openRouterApiKey: key });
+    await chrome.storage.local.set({ openRouterApiKey: key, aiAuthBlocked });
 
     const overlay = document.getElementById('apiKeyModalOverlay');
     if (overlay) overlay.style.display = 'none';
@@ -3989,21 +3750,7 @@ if (typeof document !== 'undefined') {
     }
   });
 
-  // Prewarm cache on pointer hover over perspective rail tabs
-  let lastHoveredPrewarmPid = null;
-  document.getElementById('perspectiveList')?.addEventListener('pointerover', (e) => {
-    const tabEl = e.target.closest('.perspective-tab');
-    if (tabEl && tabEl.dataset.perspectiveId) {
-      const pid = tabEl.dataset.perspectiveId;
-      if (pid !== activePerspectiveId && pid !== lastHoveredPrewarmPid) {
-        lastHoveredPrewarmPid = pid;
-        schedulePerspectivePrewarm(pid);
-      }
-    }
-  });
-  document.getElementById('perspectiveList')?.addEventListener('pointerleave', () => {
-    lastHoveredPrewarmPid = null;
-  });
+
 
   // Toast Undo button click handler
   document.getElementById('toastUndoBtn')?.addEventListener('click', async (e) => {
@@ -4085,6 +3832,7 @@ if (typeof module !== 'undefined' && module.exports) {
     prewarmMultiPerspective,
     buildOverflowChips,
     buildChoiceCriteria,
-    HYGIENE_SCORE_CRITERIA
+    handleStorageOnChanged,
+    isAiEligibleUrl
   };
 }
