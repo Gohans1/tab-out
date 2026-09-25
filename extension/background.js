@@ -481,19 +481,38 @@ const deferredPreclassifyTabs = new Map();
 
 // Hydrate reservations from session storage to preserve stampede protection across service worker suspensions
 let hydrationPromise = null;
-if (typeof chrome !== 'undefined' && chrome.storage?.session) {
-  hydrationPromise = chrome.storage.session.get(['aiReservations']).then(res => {
-    if (res?.aiReservations && typeof res.aiReservations === 'object' && !Array.isArray(res.aiReservations)) {
-      const now = Date.now();
-      for (const [k, r] of Object.entries(res.aiReservations)) {
-        if (!isDangerousKey(k) && r && typeof r === 'object' && r.until > now && !aiReservations.has(k)) {
-          aiReservations.set(k, r);
+
+function hydrateAiReservationsFromSession() {
+  if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+    hydrationPromise = chrome.storage.session.get(['aiReservations']).then(res => {
+      if (res?.aiReservations && typeof res.aiReservations === 'object' && !Array.isArray(res.aiReservations)) {
+        const now = Date.now();
+        for (const [k, r] of Object.entries(res.aiReservations)) {
+          if (!isDangerousKey(k) && r && typeof r === 'object' && r.until > now && !aiReservations.has(k)) {
+            aiReservations.set(k, r);
+          }
         }
       }
-    }
-  }).catch(() => {}).finally(() => {
-    hydrationPromise = null;
-  });
+    }).catch(() => {}).finally(() => {
+      hydrationPromise = null;
+    });
+    return hydrationPromise;
+  }
+  return Promise.resolve();
+}
+
+hydrateAiReservationsFromSession();
+
+function _resetAiReservationsForTesting() {
+  aiReservations.clear();
+  deferredPreclassifyTabs.clear();
+  pendingPreclassifyTabs.clear();
+  if (sessionReservationSaveTimer) {
+    clearTimeout(sessionReservationSaveTimer);
+    sessionReservationSaveTimer = null;
+  }
+  sessionReservationResolvers = [];
+  hydrationPromise = null;
 }
 
 function reservationMapKey(key) {
@@ -550,13 +569,6 @@ function updateAiReservations(message) {
       released.push(r.rawKey || k);
     }
   }
-  if (aiReservations.size > 200) {
-    for (const [k, r] of aiReservations) {
-      aiReservations.delete(k);
-      released.push(r?.rawKey || k);
-      if (aiReservations.size <= 100) break;
-    }
-  }
 
   for (const key of message.keys) {
     if (typeof key !== 'string' || !key || isDangerousKey(key)) continue;
@@ -570,6 +582,14 @@ function updateAiReservations(message) {
     } else if (!reservation || reservation.until <= now || reservation.owner === message.owner) {
       aiReservations.set(mapKey, { owner: message.owner, until: now + 30000, rawKey: key });
       claimed.push(key);
+    }
+  }
+
+  if (aiReservations.size > 200) {
+    for (const [k, r] of aiReservations) {
+      aiReservations.delete(k);
+      released.push(r?.rawKey || k);
+      if (aiReservations.size <= 100) break;
     }
   }
   if (released.length && deferredPreclassifyTabs.size) {
@@ -1120,6 +1140,11 @@ if (typeof module !== 'undefined' && module.exports) {
     stripUserInfoFallback,
     stripTitleNoise,
     isFallbackLabel,
-    isRealTabUrl
+    isRealTabUrl,
+    _resetAiReservationsForTesting,
+    hydrateAiReservationsFromSession,
+    aiReservations,
+    deferredPreclassifyTabs,
+    pendingPreclassifyTabs
   };
 }
