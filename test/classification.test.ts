@@ -9,24 +9,14 @@ const {
 } = require("../extension/app.js");
 
 describe("DEFAULT_PERSPECTIVES & Category Rules", () => {
-  test("DEFAULT_PERSPECTIVES exports valid system perspectives with empty default tag descriptions", () => {
+  test("DEFAULT_PERSPECTIVES exports domain as default system perspective", () => {
     expect(Array.isArray(DEFAULT_PERSPECTIVES)).toBe(true);
-    expect(DEFAULT_PERSPECTIVES.length).toBeGreaterThanOrEqual(3);
+    expect(DEFAULT_PERSPECTIVES.length).toBe(1);
 
     const domainP = DEFAULT_PERSPECTIVES.find((p: any) => p.id === "domain");
-    const topicP = DEFAULT_PERSPECTIVES.find((p: any) => p.id === "topic");
-    const purposeP = DEFAULT_PERSPECTIVES.find((p: any) => p.id === "purpose");
-
     expect(domainP).toBeDefined();
-    expect(topicP).toBeDefined();
-    expect(purposeP).toBeDefined();
-
-    expect(topicP.labels.length).toBeGreaterThanOrEqual(5);
+    expect(domainP.isSystem).toBe(true);
     expect(CATEGORY_RULES.length).toBeGreaterThan(0);
-
-    // Verify topic labels default to empty descriptions to optimize LLM prompt tokens
-    expect(topicP.labels.every((l: any) => l.description === "")).toBe(true);
-    expect(purposeP.labels.every((l: any) => l.description === "")).toBe(true);
   });
 });
 

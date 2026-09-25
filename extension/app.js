@@ -914,6 +914,9 @@ function syncCardState(card) {
     if (remainingCount > 1) {
       const closeGroupText = typeof t === 'function' ? t('tabs.close_group', { count: remainingCount }) : `Close ${remainingCount} tabs`;
       closeBtn.innerHTML = `${ICONS.close} ${escapeHtml(closeGroupText)}`;
+    } else if (remainingCount === 1) {
+      const closeSingleText = typeof t === 'function' ? t('tabs.close_single_tab') : 'Close tab';
+      closeBtn.innerHTML = `${ICONS.close} ${escapeHtml(closeSingleText)}`;
     } else {
       closeBtn.remove();
     }
@@ -1294,6 +1297,7 @@ const PERSPECTIVE_ICONS = {
   globe: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" /></svg>`,
   tag: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>`,
   target: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>`,
+  'alert-circle': `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>`,
   folder: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" /></svg>`,
   edit: `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>`
 };
@@ -1516,49 +1520,118 @@ const DEFAULT_PERSPECTIVES = [
     icon: 'globe',
     isSystem: true,
     labels: []
-  },
-  {
-    id: 'topic',
-    name: 'Chủ đề',
-    icon: 'tag',
-    isSystem: false,
-    labels: [
-      { name: 'AI & Machine Learning', description: '', color: 'purple' },
-      { name: 'Lập trình / Dev', description: '', color: 'emerald' },
-      { name: 'Mạng xã hội', description: '', color: 'blue' },
-      { name: 'Giải trí / Media', description: '', color: 'rose' },
-      { name: 'Tin tức & Đọc báo', description: '', color: 'amber' },
-      { name: 'Mua sắm', description: '', color: 'cyan' },
-      { name: 'Công việc / Email', description: '', color: 'blue' },
-      { name: 'Khác', description: '', color: '' }
-    ]
-  },
-  {
-    id: 'purpose',
-    name: 'Mục đích',
-    icon: 'target',
-    isSystem: false,
-    labels: [
-      { name: 'Công việc', description: '' },
-      { name: 'Nghiên cứu', description: '' },
-      { name: 'Giải trí', description: '' },
-      { name: 'Cá nhân', description: '' },
-      { name: 'Tạm thời', description: '' },
-      { name: 'Khác', description: '' }
-    ]
   }
 ];
+
+const PERSPECTIVE_TEMPLATES = {
+  topic: {
+    id: 'topic',
+    icon: 'tag',
+    en: {
+      name: 'Topic',
+      labels: [
+        { name: 'Work & Productivity', description: 'Office apps, docs, spreadsheets, project management, email, meetings, calendars', color: 'blue' },
+        { name: 'Education & Study', description: 'Coursework, LMS portals, university resources, academic papers, research articles, textbooks, tutorials', color: 'amber' },
+        { name: 'Development', description: 'Source code, git repos, developer documentation, APIs, cloud consoles, dev tools, debugging', color: 'emerald' },
+        { name: 'AI & Assistants', description: 'AI chatbots, LLM tools, prompt generators, generative media, AI search engines', color: 'purple' },
+        { name: 'News & Reading', description: 'News outlets, journalism, industry blogs, newsletters, editorials, long-form reading', color: 'amber' },
+        { name: 'Social Media', description: 'Social feeds, community discussion, messaging, microblogs, profile browsing', color: 'blue' },
+        { name: 'Media & Entertainment', description: 'Video streaming, music, movies, gaming, anime, comics, creative hobbies', color: 'rose' },
+        { name: 'Shopping & Finance', description: 'E-commerce, online marketplaces, banking, investments, price tracking, receipts', color: 'cyan' },
+        { name: 'Other', description: 'Miscellaneous or uncategorized content', color: '' }
+      ]
+    },
+    vi: {
+      name: 'Chủ đề',
+      labels: [
+        { name: 'Công việc & Năng suất', description: 'Ứng dụng văn phòng, tài liệu, bảng tính, quản lý dự án, email, lịch họp', color: 'blue' },
+        { name: 'Giáo dục & Học tập', description: 'Bài giảng, portal trường học (LMS), tài liệu học tập, nghiên cứu học thuật, sách giáo trình', color: 'amber' },
+        { name: 'Lập trình / Dev', description: 'Mã nguồn, kho git, tài liệu kỹ thuật, API, console đám mây, công cụ lập trình', color: 'emerald' },
+        { name: 'AI & Trợ lý ảo', description: 'Trợ lý AI, chatbot LLM, công cụ sinh ảnh/chữ, công cụ tìm kiếm bằng AI', color: 'purple' },
+        { name: 'Tin tức & Đọc báo', description: 'Báo chí, tạp chí, bản tin email, bài phân tích chuyên sâu', color: 'amber' },
+        { name: 'Mạng xã hội', description: 'Bảng tin xã hội, diễn đàn cộng đồng, nhắn tin, theo dõi cập nhật', color: 'blue' },
+        { name: 'Giải trí / Media', description: 'Xem video, nghe nhạc, phim ảnh, trò chơi, truyện tranh, sở thích', color: 'rose' },
+        { name: 'Mua sắm & Tài chính', description: 'Sàn thương mại điện tử, cửa hàng online, ngân hàng, đầu tư, theo dõi đơn hàng', color: 'cyan' },
+        { name: 'Khác', description: 'Nội dung khác hoặc chưa phân loại', color: '' }
+      ]
+    }
+  },
+  purpose: {
+    id: 'purpose',
+    icon: 'target',
+    en: {
+      name: 'Purpose',
+      labels: [
+        { name: 'Focus Work', description: 'Active creation, authoring documents, coding, executing tasks, solving problems', color: 'blue' },
+        { name: 'Study & Learning', description: 'Exam preparation, reading lecture notes, academic research, studying course materials', color: 'amber' },
+        { name: 'Reference & Reading', description: 'Documentation lookups, reading articles, API specs, background guides', color: 'emerald' },
+        { name: 'Communication', description: 'Messaging, emails, meetings, social networking, team coordination', color: 'purple' },
+        { name: 'Quick Lookup', description: 'Ephemeral searches, price checks, fact checking, quick queries', color: 'cyan' },
+        { name: 'Other', description: 'Uncategorized or miscellaneous intent', color: '' }
+      ]
+    },
+    vi: {
+      name: 'Mục đích',
+      labels: [
+        { name: 'Làm việc tập trung', description: 'Xử lý công việc chính, viết tài liệu, code, hoàn thành nhiệm vụ', color: 'blue' },
+        { name: 'Học tập & Nghiên cứu', description: 'Học bài, nghiên cứu đề tài, đọc tài liệu khóa học, ôn thi', color: 'amber' },
+        { name: 'Tham khảo & Đọc', description: 'Tra cứu tài liệu, đọc bài blog, xem hướng dẫn kỹ thuật', color: 'emerald' },
+        { name: 'Giao tiếp & Trao đổi', description: 'Nhắn tin, trả lời email, họp hành, thảo luận công việc', color: 'purple' },
+        { name: 'Tra cứu nhanh', description: 'Tìm kiếm lướt qua, kiểm tra giá, xem nhanh thông tin ngắn hạn', color: 'cyan' },
+        { name: 'Khác', description: 'Mục đích khác hoặc chưa phân loại', color: '' }
+      ]
+    }
+  },
+  priority: {
+    id: 'priority',
+    icon: 'alert-circle',
+    en: {
+      name: 'Priority',
+      labels: [
+        { name: 'Urgent / Immediate', description: 'Urgent tasks, active meetings, hot production issues, unsubmitted forms', color: 'rose' },
+        { name: 'Important / Today', description: 'Primary work tasks for today, active documents, in-progress research', color: 'amber' },
+        { name: 'Backlog / Read Later', description: 'Articles, tutorials, technical blogs, videos saved for later reference', color: 'blue' },
+        { name: 'Disposable / Can Close', description: 'Search queries, completed downloads, temporary redirects, auth logins', color: 'cyan' },
+        { name: 'Other', description: '', color: '' }
+      ]
+    },
+    vi: {
+      name: 'Ưu tiên',
+      labels: [
+        { name: 'Khẩn cấp / Làm ngay', description: 'Việc gấp, sự cố production, form đang điền, tài liệu họp', color: 'rose' },
+        { name: 'Quan trọng trong ngày', description: 'Công việc chính hôm nay, tài liệu đang soạn thảo, nghiên cứu dở', color: 'amber' },
+        { name: 'Đọc sau / Backlog', description: 'Bài blog kỹ thuật, bài hướng dẫn, video tham khảo khi rảnh', color: 'blue' },
+        { name: 'Có thể đóng luôn', description: 'Kết quả tìm kiếm, tải xong, trang đăng nhập xong rác rưởi', color: 'cyan' },
+        { name: 'Khác', description: '', color: '' }
+      ]
+    }
+  }
+};
+
+function getPerspectiveTemplate(templateId, lang = 'en') {
+  const tpl = PERSPECTIVE_TEMPLATES[templateId];
+  if (!tpl) return null;
+  const langKey = lang === 'vi' ? 'vi' : 'en';
+  const localized = tpl[langKey] || tpl.en;
+  return {
+    id: tpl.id,
+    icon: tpl.icon,
+    isSystem: false,
+    name: localized.name,
+    labels: (localized.labels || []).map(l => ({ ...l }))
+  };
+}
 
 const CATEGORY_RULES = [
   {
     category: 'ai',
     domains: ['aistudio.google.com', 'chatgpt.com', 'claude.ai', 'anthropic.com', 'openai.com', 'huggingface.co', 'grok.com', 'x.ai', 'kimi.moonshot.cn', 'deepseek.com', 'perplexity.ai', 'replicate.com'],
-    keywords: ['ai', 'artificial intelligence', 'machine learning', 'deep learning', 'gemini', 'chatgpt', 'claude', 'anthropic', 'openai', 'llm', 'prompt', 'grok', 'kimi', 'deepseek', 'copilot']
+    keywords: ['ai', 'artificial intelligence', 'machine learning', 'deep learning', 'gemini', 'chatgpt', 'claude', 'anthropic', 'openai', 'llm', 'prompt', 'grok', 'kimi', 'deepseek', 'copilot', 'assistant', 'assistants', 'trợ lý ảo']
   },
   {
     category: 'dev',
     domains: ['github.com', 'gist.github.com', 'gitlab.com', 'stackoverflow.com', 'npm.im', 'npmjs.com', 'crates.io', 'developer.mozilla.org', 'w3schools.com'],
-    keywords: ['github', 'gitlab', 'gist', 'code', 'commit', 'pull request', 'react', 'vue', 'angular', 'bun', 'node', 'typescript', 'javascript', 'python', 'rust', 'golang', 'docker', 'api', 'dev', 'sdk', 'bug', 'fix', 'refactor', 'repo', 'lập trình']
+    keywords: ['github', 'gitlab', 'gist', 'code', 'commit', 'pull request', 'react', 'vue', 'angular', 'bun', 'node', 'typescript', 'javascript', 'python', 'rust', 'golang', 'docker', 'api', 'dev', 'sdk', 'bug', 'fix', 'refactor', 'repo', 'lập trình', 'docs', 'documentation']
   },
   {
     category: 'social',
@@ -1577,18 +1650,18 @@ const CATEGORY_RULES = [
   },
   {
     category: 'shopping',
-    domains: ['shopee.vn', 'shopee.com', 'lazada.vn', 'amazon.com', 'ebay.com', 'tiki.vn', 'aliexpress.com'],
-    keywords: ['shopping', 'mua sắm', 'cart', 'checkout', 'price', 'giá', 'order', 'deal', 'store']
+    domains: ['shopee.vn', 'shopee.com', 'lazada.vn', 'amazon.com', 'ebay.com', 'tiki.vn', 'aliexpress.com', 'stripe.com', 'paypal.com', 'binance.com', 'coinbase.com'],
+    keywords: ['shopping', 'mua sắm', 'cart', 'checkout', 'price', 'giá', 'order', 'deal', 'store', 'finance', 'tài chính', 'bank', 'banking', 'ngân hàng', 'crypto']
   },
   {
     category: 'work',
-    domains: ['mail.google.com', 'outlook.live.com', 'outlook.office.com', 'slack.com', 'jira.atlassian.com', 'linear.app', 'notion.so', 'docs.google.com', 'sheets.google.com', 'meet.google.com', 'zoom.us'],
-    keywords: ['mail', 'email', 'inbox', 'meeting', 'calendar', 'công việc', 'task', 'project', 'work']
+    domains: ['mail.google.com', 'outlook.live.com', 'outlook.office.com', 'slack.com', 'jira.atlassian.com', 'linear.app', 'notion.so', 'docs.google.com', 'sheets.google.com', 'meet.google.com', 'zoom.us', 'teams.microsoft.com', 'trello.com', 'asana.com', 'figma.com'],
+    keywords: ['mail', 'email', 'inbox', 'meeting', 'calendar', 'công việc', 'task', 'project', 'work', 'productivity', 'năng suất', 'office', 'workspace']
   },
   {
-    category: 'research',
-    domains: ['wikipedia.org', 'arxiv.org', 'scholar.google.com'],
-    keywords: ['docs', 'documentation', 'guide', 'tutorial', 'wiki', 'paper', 'research', 'nghiên cứu', 'tài liệu']
+    category: 'education',
+    domains: ['wikipedia.org', 'arxiv.org', 'scholar.google.com', 'canvas.net', 'instructure.com', 'blackboard.com', 'moodle.org', 'coursera.org', 'edx.org', 'overleaf.com', 'jstor.org', 'quizlet.com', 'researchgate.net'],
+    keywords: ['docs', 'documentation', 'guide', 'tutorial', 'wiki', 'paper', 'research', 'nghiên cứu', 'tài liệu', 'education', 'study', 'học tập', 'giáo dục', 'lecture', 'assignment', 'course', 'university', 'academic', 'lms']
   }
 ];
 
@@ -3338,7 +3411,8 @@ function renderDomainCard(group, lastActiveTabOverride) {
   const totalExtras = dupeUrls.reduce((sum, [, count]) => sum + (count - 1), 0);
 
   // Badges: quiet tabular text label
-  const tabBadgeText = typeof t === 'function' ? t('header.open_tabs_count', { count: tabCount }) : `${tabCount} tab${tabCount !== 1 ? 's' : ''} open`;
+  const tabBadgeKey = tabCount === 1 ? 'tabs.open_tabs_count_single' : 'tabs.open_tabs_count_plural';
+  const tabBadgeText = typeof t === 'function' ? t(tabBadgeKey, { count: tabCount }) : `${tabCount} tab${tabCount !== 1 ? 's' : ''} open`;
   const tabBadge = tabCount > 0
     ? `<span class="open-tabs-badge">${escapeHtml(tabBadgeText)}</span>`
     : '';
@@ -3402,12 +3476,14 @@ function renderDomainCard(group, lastActiveTabOverride) {
   }).join('') + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(8), urlCounts, isExpanded, group.domain, lastActiveTab) : '');
 
   let actionsHtml = '';
-  if (tabCount > 1) {
-    const closeGroupText = typeof t === 'function' ? t('tabs.close_group', { count: tabCount }) : `Close ${tabCount} tabs`;
+  if (tabCount >= 1) {
+    const closeBtnText = tabCount === 1
+      ? (typeof t === 'function' ? t('tabs.close_single_tab') : 'Close tab')
+      : (typeof t === 'function' ? t('tabs.close_group', { count: tabCount }) : `Close ${tabCount} tabs`);
     actionsHtml += `
       <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain="${escapeHtml(group.domain)}">
         ${ICONS.close}
-        ${escapeHtml(closeGroupText)}
+        ${escapeHtml(closeBtnText)}
       </button>`;
   }
 
@@ -3456,6 +3532,8 @@ function renderDomainCard(group, lastActiveTabOverride) {
       </div>
     </div>`;
 }
+
+const renderMissionCard = renderDomainCard;
 
 
 /* ----------------------------------------------------------------
@@ -4300,6 +4378,8 @@ if (typeof document !== 'undefined') {
     const tagsContainer = document.getElementById('perspectiveTagsContainer');
 
     if (overlay) {
+      const form = document.getElementById('perspectiveForm');
+      if (form) form.dataset.templateIcon = '';
       if (modalTitle) modalTitle.textContent = typeof t === 'function' ? t('modal.perspective.title_new') : 'New Perspective';
       if (editId) editId.value = '';
       if (nameInput) nameInput.value = '';
@@ -4338,7 +4418,7 @@ if (typeof document !== 'undefined') {
       if (editId) editId.value = p.id;
       if (nameInput) nameInput.value = p.name;
       if (delBtn) delBtn.style.display = p.isSystem ? 'none' : 'inline-flex';
-      const isDefault = DEFAULT_PERSPECTIVES.some(dp => dp.id === p.id && !dp.isSystem);
+      const isDefault = DEFAULT_PERSPECTIVES.some(dp => dp.id === p.id && !dp.isSystem) || Boolean(PERSPECTIVE_TEMPLATES && p.id && !isDangerousKey(p.id) && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, p.id));
       if (resetBtn) resetBtn.style.display = isDefault ? 'inline-flex' : 'none';
       if (tagsContainer) {
         tagsContainer.innerHTML = '';
@@ -4360,7 +4440,11 @@ if (typeof document !== 'undefined') {
   if (action === 'reset-perspective-default') {
     e.stopPropagation();
     const editId = document.getElementById('perspectiveEditId')?.value;
-    const defaultP = DEFAULT_PERSPECTIVES.find(dp => dp.id === editId);
+    let defaultP = DEFAULT_PERSPECTIVES.find(dp => dp.id === editId);
+    if (!defaultP && typeof PERSPECTIVE_TEMPLATES !== 'undefined' && editId && !isDangerousKey(editId) && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, editId)) {
+      const currentLang = typeof TabOutI18n !== 'undefined' ? TabOutI18n.getLanguage() : 'en';
+      defaultP = getPerspectiveTemplate(editId, currentLang);
+    }
     if (!defaultP) return;
 
     const tagsContainer = document.getElementById('perspectiveTagsContainer');
@@ -4373,6 +4457,33 @@ if (typeof document !== 'undefined') {
       userTags.forEach(tag => addTagRowToModal(tag.name, tag.description, false, tag.color));
     }
     showToast(typeof t === 'function' ? t('toast.tags_reset') : 'Reset to default tag list');
+    return;
+  }
+
+  // ---- Apply Perspective Template ----
+  if (action === 'apply-template-topic' || action === 'apply-template-purpose' || action === 'apply-template-priority') {
+    e.stopPropagation();
+    const templateType = action.replace('apply-template-', '');
+    const currentLang = typeof TabOutI18n !== 'undefined' ? TabOutI18n.getLanguage() : 'en';
+    const tpl = getPerspectiveTemplate(templateType, currentLang);
+    if (!tpl) return;
+
+    const nameInput = document.getElementById('perspectiveNameInput');
+    const tagsContainer = document.getElementById('perspectiveTagsContainer');
+    if (nameInput) {
+      nameInput.value = tpl.name;
+    }
+    const form = document.getElementById('perspectiveForm');
+    if (form) form.dataset.templateIcon = tpl.icon;
+    if (tagsContainer) {
+      tagsContainer.innerHTML = '';
+      const userTags = tpl.labels.filter(t => !isFallbackLabel(t.name));
+      if (userTags.length > 0) {
+        userTags.forEach(tag => addTagRowToModal(tag.name, tag.description || '', false, tag.color));
+      } else {
+        addTagRowToModal('', '');
+      }
+    }
     return;
   }
 
@@ -4945,7 +5056,9 @@ if (typeof document !== 'undefined') {
       const originalHtml = actionEl.innerHTML;
       actionEl.dataset.originalHtml = originalHtml;
       const count = group.tabs ? group.tabs.length : 0;
-      const confirmCloseText = typeof t === 'function' ? t('tabs.close_group_confirm', { count }) : `Close ${count} tabs?`;
+      const confirmCloseText = count === 1
+        ? (typeof t === 'function' ? t('tabs.close_single_tab_confirm') : 'Close tab?')
+        : (typeof t === 'function' ? t('tabs.close_group_confirm', { count }) : `Close ${count} tabs?`);
       actionEl.innerHTML = `${ICONS.close} ${escapeHtml(confirmCloseText)}`;
 
       const timeoutId = setTimeout(() => {
@@ -5730,10 +5843,11 @@ if (typeof document !== 'undefined') {
         }
       } else {
       const newId = 'p_' + Date.now().toString(36);
+      const templateIcon = document.getElementById('perspectiveForm')?.dataset.templateIcon;
       currentPerspectives.push({
         id: newId,
         name,
-        icon: 'folder',
+        icon: templateIcon || 'folder',
         isSystem: false,
         labels
       });
@@ -6209,6 +6323,10 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     DEFAULT_PERSPECTIVES,
+    PERSPECTIVE_TEMPLATES,
+    PERSPECTIVE_ICONS,
+    getPerspectiveTemplate,
+    renderMissionCard,
     TAG_PALETTE,
     resolveTagColor,
     getLabelColor,
