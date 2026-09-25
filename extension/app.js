@@ -2733,16 +2733,6 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
     }
     console.warn('[tab-out] OpenRouter ~typesafe/jev-latest request fell back to local classifier:', err);
   } finally {
-    if (hasNewLocalFallback) {
-      for (const url of Object.keys(localFallbackUpdates)) {
-        if (['ai', 'ai-low-confidence'].includes(getCacheSource(tabClassificationCache[pid]?.[url]))) {
-          delete localFallbackUpdates[url];
-        }
-      }
-      if (Object.keys(localFallbackUpdates).length) {
-        try { await saveClassificationCacheAtomic(pid, localFallbackUpdates); } catch {}
-      }
-    }
     const remainingReserved = Array.from(reservedKeys);
     if (remainingReserved.length) {
       await releaseAiKeys(remainingReserved, reservationOwner);
@@ -3008,7 +2998,7 @@ async function switchPerspective(pid) {
   }
   if (typeof document !== 'undefined') {
     const l = document.getElementById('perspectiveLoader');
-    if (l && pid === 'domain') l.style.display = 'none';
+    if (l) l.style.display = 'none';
   }
   await renderStaticDashboard({ inMemoryOnly: true });
   updatePerspectiveTelemetry();
@@ -6450,6 +6440,8 @@ if (typeof module !== 'undefined' && module.exports) {
     set isLocalSettingUpdate(v) { isLocalSettingUpdate = Boolean(v); },
     get isPerspectivesLoaded() { return isPerspectivesLoaded; },
     set isPerspectivesLoaded(v) { isPerspectivesLoaded = Boolean(v); },
+    get tabClassificationCache() { return tabClassificationCache; },
+    set tabClassificationCache(v) { tabClassificationCache = (v && typeof v === 'object') ? v : {}; },
     cloneDefaultPerspectives,
     get currentPerspectives() { return currentPerspectives; },
     set currentPerspectives(v) { currentPerspectives = v; },

@@ -226,5 +226,143 @@ describe("classifyTabs — Incognito Privacy & Data Protection", () => {
       (globalThis as any).chrome = originalChrome;
     }
   });
+
+  test("successfully classifies non-incognito tabs without ReferenceError and hides loader", async () => {
+    const app = require("../extension/app.js");
+    const origActivePid = app.activePerspectiveId;
+    const origKey = app.openRouterApiKey;
+    app.activePerspectiveId = "topic";
+
+    let loaderDisplay = "none";
+    let displayedWhileInFlight = false;
+    const dummyLoader = {
+      style: {
+        get display() { return loaderDisplay; },
+        set display(v: string) { loaderDisplay = v; }
+      }
+    };
+    (globalThis as any).document = {
+      getElementById: (id: string) => (id === "perspectiveLoader" ? dummyLoader : null),
+      querySelector: () => null
+    };
+
+    const originalFetch = (globalThis as any).fetch;
+    (globalThis as any).fetch = async () => {
+      // Prove that while AI request is in-flight, the loader was actively displayed
+      if (loaderDisplay === "flex") {
+        displayedWhileInFlight = true;
+      }
+      return new Response(JSON.stringify({
+        answers: {
+          tab_0: { choice: "Dev", confidence: 0.95 }
+        }
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+
+    const originalChrome = (globalThis as any).chrome;
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: async () => ({
+            openRouterApiKey: "test-key",
+            tabClassificationCache_topic: {},
+            perspectives: [{ id: "topic", name: "Topic", labels: [{ name: "Dev" }] }]
+          }),
+          set: async () => {}
+        }
+      },
+      runtime: {
+        sendMessage: async () => ({ claimed: ["topic:https://github.com/facebook/react"] })
+      }
+    };
+
+    try {
+      const tabs = [
+        { id: 1, url: "https://github.com/facebook/react", title: "GitHub React", incognito: false }
+      ];
+      const perspective = { id: "topic", labels: [{ name: "Dev" }] };
+
+      const result = await classifyTabs(tabs, perspective, true);
+      expect(result["https://github.com/facebook/react"]).toBeDefined();
+      expect(result["https://github.com/facebook/react"].label).toBe("Dev");
+      expect(displayedWhileInFlight).toBe(true);
+      expect(loaderDisplay).toBe("none");
+    } finally {
+      app.activePerspectiveId = origActivePid;
+      app.openRouterApiKey = origKey;
+      (globalThis as any).fetch = originalFetch;
+      (globalThis as any).chrome = originalChrome;
+      delete (globalThis as any).document;
+    }
+  });
+
+  test("switchPerspective hides perspectiveLoader when switching to another perspective", async () => {
+    const app = require("../extension/app.js");
+    const { switchPerspective } = app;
+    app.tabClassificationCache = {
+      purpose: {
+        "https://github.com/facebook/react": { label: "Work", source: "ai" }
+      }
+    };
+    app.activePerspectiveId = "topic";
+    app.currentPerspectives = [
+      { id: "domain", name: "Domain", isSystem: true },
+      { id: "topic", name: "Topic", labels: [{ name: "Dev" }] },
+      { id: "purpose", name: "Purpose", labels: [{ name: "Work" }] }
+    ];
+    let loaderDisplay = "flex";
+    const dummyLoader = {
+      style: {
+        get display() { return loaderDisplay; },
+        set display(v: string) { loaderDisplay = v; }
+      }
+    };
+    (globalThis as any).document = {
+      getElementById: (id: string) => {
+        if (id === "perspectiveLoader") return dummyLoader;
+        return null;
+      },
+      querySelector: () => null,
+      querySelectorAll: () => []
+    };
+
+    const originalChrome = (globalThis as any).chrome;
+    (globalThis as any).chrome = {
+      storage: {
+        local: {
+          get: async () => ({
+            openRouterApiKey: "test-key",
+            tabClassificationCache_purpose: {
+              "https://github.com/facebook/react": { label: "Work", source: "ai" }
+            },
+            perspectives: app.currentPerspectives
+          }),
+          set: async () => {}
+        }
+      },
+      runtime: {
+        sendMessage: async () => ({ claimed: [] })
+      }
+    };
+
+    const origActivePid = app.activePerspectiveId;
+    const origPerspectives = app.currentPerspectives;
+    const origKey = app.openRouterApiKey;
+    try {
+      // Start on topic with loader active, switch to already-classified purpose
+      await switchPerspective("purpose");
+      expect(loaderDisplay).toBe("none");
+    } finally {
+      app.activePerspectiveId = "domain";
+      app.currentPerspectives = typeof app.cloneDefaultPerspectives === "function" ? app.cloneDefaultPerspectives() : origPerspectives;
+      app.openRouterApiKey = origKey;
+      app.tabClassificationCache = {};
+      app.isLocalSettingUpdate = false;
+      if (typeof app.resetRenderCache === "function") app.resetRenderCache();
+      (globalThis as any).chrome = originalChrome;
+      delete (globalThis as any).document;
+    }
+  });
 });
+
 
