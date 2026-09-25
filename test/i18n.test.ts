@@ -24,14 +24,16 @@ describe("i18n Internationalization Subsystem", () => {
       expect(existsSync(enLocalePath)).toBe(true);
       const en = JSON.parse(readFileSync(enLocalePath, "utf-8"));
       expect(en.appName?.message).toBe("Tab Out");
-      expect(en.appDesc?.message).toBeDefined();
+      expect(typeof en.appDesc?.message).toBe("string");
+      expect(en.appDesc.message.length).toBeGreaterThan(5);
     });
 
     test("_locales/vi/messages.json exists and defines appName and appDesc in Vietnamese", () => {
       expect(existsSync(viLocalePath)).toBe(true);
       const vi = JSON.parse(readFileSync(viLocalePath, "utf-8"));
       expect(vi.appName?.message).toBe("Tab Out");
-      expect(vi.appDesc?.message).toBeDefined();
+      expect(typeof vi.appDesc?.message).toBe("string");
+      expect(vi.appDesc.message.length).toBeGreaterThan(5);
     });
   });
 

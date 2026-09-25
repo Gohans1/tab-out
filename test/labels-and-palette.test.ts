@@ -66,8 +66,10 @@ describe("Tag Color Accents & Curated Palette", () => {
     expect(colors.length).toBeGreaterThanOrEqual(5);
 
     for (const color of colors) {
-      expect(color.id).toBeDefined();
-      expect(color.name).toBeDefined();
+      expect(typeof color.id).toBe("string");
+      expect(color.id.length).toBeGreaterThan(0);
+      expect(typeof color.name).toBe("string");
+      expect(color.name.length).toBeGreaterThan(0);
       expect(color.hex).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
   });

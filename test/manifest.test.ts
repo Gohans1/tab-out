@@ -9,8 +9,8 @@ describe("Extension Manifest V3 Verification", () => {
     const manifest = JSON.parse(raw);
 
     expect(manifest.manifest_version).toBe(3);
-    expect(manifest.name).toBeDefined();
-    expect(manifest.version).toBeDefined();
+    expect(manifest.name).toBe("__MSG_appName__");
+    expect(manifest.version).toMatch(/^\d+\.\d+(\.\d+)?$/);
 
     // Verify required Chrome MV3 permissions
     expect(manifest.permissions).toContain("tabs");
