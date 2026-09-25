@@ -13,7 +13,7 @@
 </head>
 <body class="vbg-report">
 <div class="vbg-shell">
-  <a class="vbg-skip-link" href="#main">Skip to content</a>
+  <a class="vbg-skip-link" href="#main" data-i18n="header.skip_link">Skip to content</a>
 
   <!-- ================================================================
        TAB OUT COMPACT HEADER
@@ -21,13 +21,13 @@
   <header class="tabout-header">
     <div class="tabout-header-content">
       <div class="tabout-header-main">
-        <h1 class="tabout-title" id="greeting">Active tabs</h1>
-        <p class="tabout-subtitle" id="heroSubtitle">Workspace overview across all open windows.</p>
+        <h1 class="tabout-title" id="greeting" data-i18n="header.active_tabs">Active tabs</h1>
+        <p class="tabout-subtitle" id="heroSubtitle" data-i18n="header.subtitle">Workspace overview across all open windows.</p>
       </div>
       <div class="tabout-header-meta">
         <span class="tabout-date" id="dateDisplay"></span>
         <span class="tabout-meta-sep" aria-hidden="true">&middot;</span>
-        <span class="tabout-meta-tabs"><strong id="statTabs">0</strong> open tabs</span>
+        <span class="tabout-meta-tabs"><strong id="statTabs">0</strong> <span id="statTabsSuffix" data-i18n="header.open_tabs_count_suffix">open tabs</span></span>
       </div>
     </div>
   </header>
@@ -36,20 +36,28 @@
        MAIN DASHBOARD AREA
        ================================================================ -->
   <main id="main">
-    <!-- TAB OUT DUPES BANNER -->
-    <div class="tab-cleanup-banner" id="tabOutDupeBanner" style="display:none">
+    <!-- TAB OUT DUPES FLOATING ACTION PILL -->
+    <div class="tab-cleanup-banner" id="tabOutDupeBanner" style="display: none;" role="status" aria-live="polite">
       <div class="tab-cleanup-left">
-        <div class="tab-cleanup-icon">
+        <div class="tab-cleanup-icon" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
           </svg>
         </div>
         <div class="tab-cleanup-text">
-          You have <strong id="tabOutDupeCount"></strong> Tab Out tabs open. Keep just this one?
+          You have <strong id="tabOutDupeCount"></strong> Tab Out tabs open
         </div>
       </div>
-      <button class="tab-cleanup-btn" data-action="close-tabout-dupes">Close extras</button>
+      <div class="tab-cleanup-actions">
+        <button type="button" class="tab-cleanup-btn" data-action="close-tabout-dupes" data-i18n="banner.close_extras">Close extras</button>
+        <button type="button" class="tab-cleanup-dismiss" data-action="dismiss-tabout-dupes" title="Dismiss notification" aria-label="Dismiss notification" data-i18n-title="banner.dismiss" data-i18n-aria-label="banner.dismiss">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
     </div>
+
 
     <!-- THREE-COLUMN COCKPIT LAYOUT -->
     <div class="dashboard-columns cockpit-columns" id="dashboardColumns">
@@ -57,8 +65,8 @@
       <!-- COLUMN 1: Vertical Tabs (Perspectives Rail) -->
       <aside class="perspective-rail" id="perspectiveRail">
         <div class="perspective-header">
-          <span class="perspective-title">Perspectives</span>
-          <button type="button" class="perspective-add-icon-btn" data-action="open-perspective-modal" title="Add new perspective" aria-label="Add new perspective">
+          <span class="perspective-title" data-i18n="rail.perspectives">Perspectives</span>
+          <button type="button" class="perspective-add-icon-btn" data-action="open-perspective-modal" title="Add new perspective" aria-label="Add new perspective" data-i18n-title="rail.add_perspective" data-i18n-aria-label="rail.add_perspective">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
@@ -71,35 +79,62 @@
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-          <span>New perspective</span>
+          <span data-i18n="rail.new_perspective">New perspective</span>
         </button>
 
         <div class="perspective-telemetry" id="perspectiveTelemetry">
           <div class="telemetry-item" id="telemetryAiStatus" title="OpenRouter Jev status">
             <span class="telemetry-dot ready"></span>
             <span class="telemetry-label">OpenRouter (Jev)</span>
-            <button type="button" class="telemetry-config-btn" data-action="open-api-key-modal" title="Configure OpenRouter API key" aria-label="Configure OpenRouter API key">
+            <button type="button" class="telemetry-config-btn" data-action="open-api-key-modal" title="Configure OpenRouter API key" aria-label="Configure OpenRouter API key" data-i18n-title="rail.openrouter_config" data-i18n-aria-label="rail.openrouter_config">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
             </button>
           </div>
         </div>
+
+        <!-- RECENT TABS MINI CARD (Compact MRU Rail Card under OpenRouter Jev) -->
+        <div class="recent-sidebar-card" id="recentSidebarCard" style="display:none" role="region" aria-label="Recent" data-i18n-aria-label="rail.recent_tabs">
+          <div class="recent-sidebar-header">
+            <span class="recent-sidebar-title" data-i18n="rail.recent_tabs">Recent</span>
+            <span class="recent-sidebar-badge" id="recentSidebarBadge">5</span>
+          </div>
+          <div class="recent-sidebar-list" id="recentSidebarList"></div>
+        </div>
+
+        <!-- RAIL FOOTER (Pinned to Bottom of Left Column — Prevents Layout Shift) -->
+        <footer class="perspective-rail-footer" id="perspectiveRailFooter">
+          <div class="rail-footer-content">
+            <span><a href="https://github.com/zarazhangrui/tab-out" target="_blank" rel="noopener">Tab Out</a> &middot; <span data-i18n="rail.open_source">Open source</span></span>
+            <div class="lang-switcher" id="langSwitcher" role="group" aria-label="Language selector">
+              <button type="button" class="lang-btn active" data-lang="en" title="English">EN</button>
+              <span class="lang-sep">/</span>
+              <button type="button" class="lang-btn" data-lang="vi" title="Tiếng Việt">VI</button>
+            </div>
+          </div>
+        </footer>
       </aside>
 
       <!-- COLUMN 2: Open tabs section -->
       <div class="active-section" id="openTabsSection" style="display:none">
         <div class="section-header">
           <div class="section-header-left">
-            <h2 class="section-title" id="openTabsSectionTitle">Open tabs</h2>
+            <h2 class="section-title" id="openTabsSectionTitle" data-i18n="tabs.section_title">Open tabs</h2>
             <span class="section-count" id="openTabsSectionCount"></span>
           </div>
           <div class="section-header-right" id="openTabsHeaderActions"></div>
         </div>
         
+        <!-- QUICK RETURN PILL (Jump back to last active tab) -->
+        <div class="quick-return-bar" id="quickReturnBar" style="display:none" role="region" aria-label="Back to last tab" data-i18n-aria-label="tabs.quick_return"></div>
+
         <!-- Live AI classification loader -->
         <div class="perspective-loader" id="perspectiveLoader" style="display:none">
           <div class="perspective-loader-bar"></div>
-          <span class="perspective-loader-text">AI is classifying open tabs with OpenRouter (~typesafe/jev-latest)...</span>
+          <span class="perspective-loader-text" data-i18n="telemetry.loading">AI is classifying open tabs with OpenRouter (~typesafe/jev-latest)...</span>
         </div>
+
+        <!-- Perspective Tags Pills Bar (Subheader overview of active & empty tags) -->
+        <div class="perspective-tags-bar" id="perspectiveTagsBar" style="display:none" role="region" aria-label="Perspective tags overview"></div>
 
         <div class="missions" id="openTabsMissions"></div>
       </div>
@@ -107,22 +142,33 @@
       <!-- COLUMN 3: Saved for Later checklist -->
       <div class="deferred-column" id="deferredColumn">
         <div class="section-header">
-          <h2 class="section-title">Saved for later</h2>
-          <div class="section-count" id="deferredCount"></div>
+          <div class="section-header-left">
+            <h2 class="section-title" data-i18n="saved.title">Saved for later</h2>
+            <div class="section-count" id="deferredCount"></div>
+          </div>
         </div>
 
         <!-- Active checklist items -->
         <div class="deferred-list" id="deferredList" style="display:none"></div>
 
         <!-- Empty state -->
-        <div class="deferred-empty" id="deferredEmpty">
+        <div class="deferred-empty" id="deferredEmpty" data-i18n="saved.empty">
           Nothing saved.
+        </div>
+
+        <!-- Recently closed section (5 most recently closed tabs) -->
+        <div class="recently-closed-section" id="recentlyClosedSection" style="display:none" role="region" aria-label="Recently closed tabs" data-i18n-aria-label="recently_closed.title">
+          <div class="recently-closed-header">
+            <span class="recently-closed-title" data-i18n="recently_closed.title">Recently closed</span>
+            <span class="recently-closed-count" id="recentlyClosedCount"></span>
+          </div>
+          <div class="recently-closed-list" id="recentlyClosedList"></div>
         </div>
 
         <!-- Archive section -->
         <div class="deferred-archive" id="deferredArchive" style="display:none">
           <button type="button" class="archive-toggle open" id="archiveToggle" data-action="toggle-archive" aria-expanded="true" aria-label="Toggle archive">
-            <span class="archive-toggle-label">Archive <span class="archive-count" id="archiveCount"></span></span>
+            <span class="archive-toggle-label"><span data-i18n="archive.toggle_label">Archive</span> <span class="archive-count" id="archiveCount"></span></span>
             <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
           </button>
           <div class="archive-body" id="archiveBody">
@@ -130,7 +176,7 @@
               <svg class="archive-search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
               </svg>
-              <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs..." aria-label="Search archived tabs">
+              <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs..." aria-label="Search archived tabs" data-i18n-placeholder="archive.search_placeholder" data-i18n-aria-label="archive.search_placeholder">
             </div>
             <div class="archive-list" id="archiveList"></div>
           </div>
@@ -146,7 +192,7 @@
   <div class="perspective-modal-overlay" id="perspectiveModalOverlay" style="display:none">
     <div class="perspective-modal" role="dialog" aria-modal="true" aria-labelledby="perspectiveModalTitle">
       <div class="perspective-modal-header">
-        <h3 class="perspective-modal-title" id="perspectiveModalTitle">New Perspective</h3>
+        <h3 class="perspective-modal-title" id="perspectiveModalTitle" data-i18n="modal.perspective.title_new">New Perspective</h3>
         <button type="button" class="perspective-modal-close" data-action="close-perspective-modal" aria-label="Close modal">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
@@ -154,52 +200,64 @@
       <form class="perspective-form" id="perspectiveForm">
         <input type="hidden" id="perspectiveEditId" value="">
         <div class="form-group">
-          <label for="perspectiveNameInput" class="form-label">Tên Perspective</label>
-          <input type="text" id="perspectiveNameInput" class="form-input" placeholder="e.g. Dự án, Ưu tiên, Đọc dở" required autocomplete="off">
+          <label for="perspectiveNameInput" class="form-label" data-i18n="modal.perspective.name_label">Perspective Name</label>
+          <input type="text" id="perspectiveNameInput" class="form-input" placeholder="e.g. Projects, Priority, Reading" data-i18n-placeholder="modal.perspective.name_placeholder" required autocomplete="off" maxlength="50">
         </div>
         <div class="form-group">
           <div class="tags-header">
-            <label class="form-label">Danh sách Tags & Hướng dẫn phân loại cho AI</label>
-            <span class="tags-hint">Mỗi tag có tên và mô tả/instruct riêng để OpenRouter Jev phân loại chuẩn xác</span>
+            <label class="form-label" data-i18n="modal.perspective.tags_label">Tags & AI Classification Rules</label>
+            <span class="tags-hint" data-i18n="modal.perspective.tags_hint">Each tag has a name and instruct description for OpenRouter Jev classification</span>
           </div>
           <div class="tags-container" id="perspectiveTagsContainer">
             <!-- Dynamic Tag Rows injected by JS -->
           </div>
           <button type="button" class="btn-add-tag" id="addTagRowBtn" data-action="add-tag-row">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-            <span>Thêm tag</span>
+            <span data-i18n="modal.perspective.add_tag">Add tag</span>
           </button>
+          <div class="tags-system-fallback-hint" id="perspectiveFallbackHint">
+            <span class="fallback-dot" aria-hidden="true">•</span>
+            <span data-i18n="modal.perspective.fallback_hint">Tag "Other" is the default for uncategorized tabs (managed by system, cannot be deleted).</span>
+          </div>
         </div>
         <div class="perspective-modal-actions">
-          <button type="button" class="btn-secondary btn-danger" id="perspectiveDeleteBtn" data-action="delete-perspective" style="display:none">Xóa</button>
+          <button type="button" class="btn-secondary btn-danger" id="perspectiveDeleteBtn" data-action="delete-perspective" style="display:none" data-i18n="modal.perspective.delete">Delete</button>
+          <button type="button" class="btn-secondary" id="perspectiveResetDefaultBtn" data-action="reset-perspective-default" style="display:none" title="Reset default tags" data-i18n-title="modal.perspective.reset_default" data-i18n="modal.perspective.reset_default">Reset to default</button>
           <div class="action-spacer"></div>
-          <button type="button" class="btn-secondary" data-action="close-perspective-modal">Hủy</button>
-          <button type="submit" class="btn-primary" id="perspectiveSubmitBtn">Lưu & Áp dụng</button>
+          <button type="button" class="btn-secondary" data-action="close-perspective-modal" data-i18n="modal.perspective.cancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="perspectiveSubmitBtn" data-i18n="modal.perspective.save">Save & Apply</button>
         </div>
       </form>
     </div>
   </div>
 
   <!-- ================================================================
-       API KEY CONFIG MODAL
+       API KEY / SETTINGS CONFIG MODAL
        ================================================================ -->
   <div class="perspective-modal-overlay" id="apiKeyModalOverlay" style="display:none">
     <div class="perspective-modal" role="dialog" aria-modal="true" aria-labelledby="apiKeyModalTitle">
       <div class="perspective-modal-header">
-        <h3 class="perspective-modal-title" id="apiKeyModalTitle">OpenRouter AI Settings</h3>
+        <h3 class="perspective-modal-title" id="apiKeyModalTitle" data-i18n="modal.settings.title">Settings</h3>
         <button type="button" class="perspective-modal-close" data-action="close-api-key-modal" aria-label="Close modal">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
       <form class="perspective-form" id="apiKeyForm">
         <div class="form-group">
-          <label for="apiKeyInput" class="form-label">OpenRouter API Key <span class="form-label-desc">(Optional)</span></label>
-          <input type="password" id="apiKeyInput" class="form-input" placeholder="sk-or-v1-... (leave blank to use smart local rules)" autocomplete="off">
-          <span class="form-help">Uses <code>~typesafe/jev-latest</code> via OpenRouter Decisions API. If empty or offline, local rules are used instantly.</span>
+          <label for="settingsLanguageSelect" class="form-label" data-i18n="modal.settings.language_label">Language</label>
+          <select id="settingsLanguageSelect" class="form-input form-select">
+            <option value="en" data-i18n="modal.settings.language_en">English</option>
+            <option value="vi" data-i18n="modal.settings.language_vi">Tiếng Việt</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="apiKeyInput" class="form-label" data-i18n="modal.settings.api_key_label">OpenRouter API Key (Optional)</label>
+          <input type="password" id="apiKeyInput" class="form-input" placeholder="sk-or-v1-... (leave blank to use smart local rules)" data-i18n-placeholder="modal.settings.api_key_placeholder" autocomplete="off">
+          <span class="form-help" data-i18n="modal.settings.api_key_help">Uses <code>~typesafe/jev-latest</code> via OpenRouter Decisions API. If empty or offline, local rules are used instantly.</span>
         </div>
         <div class="perspective-modal-actions">
-          <button type="button" class="btn-secondary" data-action="close-api-key-modal">Cancel</button>
-          <button type="submit" class="btn-primary">Save Key</button>
+          <button type="button" class="btn-secondary" data-action="close-api-key-modal" data-i18n="modal.settings.cancel">Cancel</button>
+          <button type="submit" class="btn-primary" data-i18n="modal.settings.save">Save Settings</button>
         </div>
       </form>
     </div>
@@ -211,7 +269,7 @@
   <div class="perspective-modal-overlay confirm-modal-overlay" id="confirmModalOverlay" style="display:none">
     <div class="perspective-modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmModalTitle" aria-describedby="confirmModalDesc">
       <div class="perspective-modal-header">
-        <h3 class="perspective-modal-title" id="confirmModalTitle">Xác nhận</h3>
+        <h3 class="perspective-modal-title" id="confirmModalTitle" data-i18n="modal.confirm.title">Confirmation</h3>
         <button type="button" class="perspective-modal-close" data-action="close-confirm-modal" aria-label="Close modal">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
@@ -220,18 +278,11 @@
         <p class="confirm-modal-desc" id="confirmModalDesc"></p>
       </div>
       <div class="perspective-modal-actions">
-        <button type="button" class="btn-secondary" id="confirmModalCancelBtn" data-action="close-confirm-modal">Hủy</button>
-        <button type="button" class="btn-primary btn-danger" id="confirmModalOkBtn">Xác nhận</button>
+        <button type="button" class="btn-secondary" id="confirmModalCancelBtn" data-action="close-confirm-modal" data-i18n="modal.confirm.cancel">Cancel</button>
+        <button type="button" class="btn-primary btn-danger" id="confirmModalOkBtn" data-i18n="modal.confirm.ok">Confirm</button>
       </div>
     </div>
   </div>
-
-  <!-- ================================================================
-       VERCEL AUTHORSHIP FOOTER (Canonical Quiet Shell)
-       ================================================================ -->
-  <footer class="vbg-footer">
-    <span><a href="https://github.com/zarazhangrui/tab-out" target="_blank" rel="noopener">Tab Out</a> &middot; Open source</span>
-  </footer>
 
 </div><!-- end .vbg-shell -->
 
@@ -241,11 +292,14 @@
     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
   </svg>
   <span id="toastText"></span>
-  <button type="button" class="toast-action-btn" id="toastUndoBtn" style="display:none" aria-label="Undo action">Undo</button>
+  <button type="button" class="toast-action-btn" id="toastUndoBtn" style="display:none" aria-label="Undo action" data-i18n="toast.undo">Undo</button>
 </div>
 
 <!-- Personal config (optional) -->
 <script src="config.local.js"></script>
+
+<!-- Internationalization (i18n) Engine -->
+<script src="i18n.js"></script>
 
 <!-- Dashboard logic -->
 <script src="app.js"></script>

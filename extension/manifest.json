@@ -1,10 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Tab Out",
+  "default_locale": "en",
+  "name": "__MSG_appName__",
   "version": "1.0.0",
-  "description": "Keep tabs on your tabs. New tab page that groups your open tabs by domain and lets you close them with style.",
-  "permissions": ["tabs", "storage", "favicon", "unlimitedStorage"],
+  "description": "__MSG_appDesc__",
+  "permissions": ["tabs", "storage", "favicon", "unlimitedStorage", "contextMenus", "sessions"],
   "host_permissions": ["https://openrouter.ai/*"],
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; connect-src 'self' https://openrouter.ai; img-src 'self' chrome-extension: data:; style-src 'self' 'unsafe-inline'; frame-src 'none';"
+  },
   "chrome_url_overrides": { "newtab": "index.html" },
   "background": { "service_worker": "background.js" },
   "action": {

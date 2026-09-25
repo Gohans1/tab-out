@@ -1,0 +1,1225 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bản Thiết Kế: Vẽ Đầy Đủ Cả 3 Lựa Chọn Vị Trí Banner Dupe Tabs</title>
+  <link rel="stylesheet" href="./visual-core.css">
+
+  <style>
+    /* CSS Tùy biến riêng cho Mockup Cockpit Dashboard Tab Out */
+    :root {
+      --mock-bg: #000000;
+      --mock-surface: #0a0a0c;
+      --mock-surface-card: #09090b;
+      --mock-border: #1f1f23;
+      --mock-border-subtle: #27272a;
+      --mock-text-pri: #ededed;
+      --mock-text-sec: #88888e;
+      --mock-text-muted: #52525b;
+      --mock-warning: #f59e0b;
+      --mock-purple: #a855f7;
+      --mock-blue: #3b82f6;
+      --mock-green: #22c55e;
+    }
+
+    /* Khung giả lập cửa sổ Tab Out */
+    .mock-window {
+      background: #000000;
+      border: 1px solid #27272a;
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #ededed;
+      width: 100%;
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      min-height: 490px;
+    }
+
+    /* Mockup Header */
+    .mock-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 0.85rem;
+      border-bottom: 1px solid #141416;
+      margin-bottom: 0.85rem;
+    }
+
+    .mock-header-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.2;
+    }
+
+    .mock-header-sub {
+      font-size: 0.72rem;
+      color: #71717a;
+      margin-top: 0.15rem;
+    }
+
+    .mock-header-meta {
+      font-size: 0.72rem;
+      color: #71717a;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mock-header-meta strong {
+      color: #e4e4e7;
+    }
+
+    /* BANNER HIỆN TRẠNG CŨ: 100% width, justify-content: space-between */
+    .mock-dupe-banner-old {
+      background: #0a0a0c;
+      border: 1px solid #27272a;
+      border-radius: 0.5rem;
+      padding: 0.65rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.85rem;
+      width: 100%;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    .mock-dupe-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .mock-dupe-icon {
+      color: var(--mock-warning);
+      display: flex;
+      align-items: center;
+      font-size: 1.1rem;
+    }
+
+    .mock-dupe-text {
+      font-size: 0.8rem;
+      color: #ededed;
+    }
+
+    .mock-dupe-text strong {
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .mock-dupe-btn {
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 0.35rem 0.85rem;
+      border-radius: 0.375rem;
+      border: 1px solid #3f3f46;
+      background: #141416;
+      color: #f4f4f5;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .mock-dupe-btn:hover {
+      background: #ffffff;
+      color: #000000;
+      border-color: #ffffff;
+    }
+
+    /* MOCKUP COCKPIT 3 CỘT */
+    .mock-cockpit {
+      display: grid;
+      grid-template-columns: 150px 1fr 210px;
+      gap: 1.15rem;
+      align-items: start;
+    }
+
+    /* CỘT 1: Perspectives Rail */
+    .mock-rail-left {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-size: 0.72rem;
+    }
+
+    .mock-rail-title {
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #71717a;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.25rem;
+    }
+
+    .mock-perspective-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.35rem 0.55rem;
+      border-radius: 0.35rem;
+      color: #a1a1aa;
+      border: 1px solid transparent;
+      background: transparent;
+    }
+
+    .mock-perspective-item.active {
+      color: #ffffff;
+      border-color: rgba(168, 85, 247, 0.4);
+      background: rgba(168, 85, 247, 0.08);
+      font-weight: 600;
+    }
+
+    .mock-rail-new-btn {
+      margin-top: 0.4rem;
+      padding: 0.35rem 0.55rem;
+      border: 1px dashed #27272a;
+      border-radius: 0.35rem;
+      color: #71717a;
+      font-size: 0.72rem;
+      text-align: center;
+    }
+
+    /* CỘT 2: Center Board */
+    .mock-center-board {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .mock-board-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #18181b;
+    }
+
+    .mock-board-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mock-board-actions {
+      display: flex;
+      gap: 0.35rem;
+    }
+
+    .mock-action-chip {
+      font-size: 0.6875rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.3rem;
+      border: 1px solid #27272a;
+      background: #0a0a0c;
+      color: #a1a1aa;
+    }
+
+    .mock-tag-filter {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      background: rgba(168, 85, 247, 0.12);
+      border: 1px solid var(--mock-purple);
+      color: #f3e8ff;
+      width: fit-content;
+    }
+
+    .mock-cards-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem;
+    }
+
+    .mock-card-box {
+      background: var(--mock-surface-card);
+      border: 1px solid #222226;
+      border-radius: 0.5rem;
+      padding: 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .mock-card-header {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #d4d4d8;
+      display: flex;
+      justify-content: space-between;
+      padding-bottom: 0.3rem;
+      border-bottom: 1px solid #18181b;
+    }
+
+    .mock-tab-entry {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.3rem 0.45rem;
+      border-radius: 0.3rem;
+      background: #121215;
+      font-size: 0.72rem;
+      color: #d4d4d8;
+    }
+
+    /* CỘT 3: Saved & Archive Rail */
+    .mock-rail-right {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      font-size: 0.72rem;
+      border-left: 1px solid #18181b;
+      padding-left: 0.75rem;
+    }
+
+    .mock-saved-head {
+      font-weight: 600;
+      color: #d4d4d8;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .mock-saved-item {
+      padding: 0.45rem;
+      background: #0d0d10;
+      border: 1px solid #1f1f23;
+      border-radius: 0.35rem;
+      font-size: 0.7rem;
+      color: #a1a1aa;
+    }
+
+    /* =========================================================================
+       3 PHƯƠNG ÁN MỚI
+       ========================================================================= */
+
+    /* PHƯƠNG ÁN A: FLOATING ACTION PILL Ở ĐÁY MÀN HÌNH */
+    .mock-floating-pill {
+      position: absolute;
+      bottom: 1.25rem;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #09090b;
+      border: 1px solid #3f3f46;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08);
+      border-radius: 9999px;
+      padding: 0.45rem 0.6rem 0.45rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      z-index: 50;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      white-space: nowrap;
+    }
+
+    .mock-floating-pill.dismissed {
+      opacity: 0;
+      transform: translateX(-50%) translateY(20px);
+      pointer-events: none;
+    }
+
+    .mock-pill-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: #f4f4f5;
+    }
+
+    .mock-pill-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .mock-btn-pill-action {
+      background: #ffffff;
+      color: #000000;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .mock-btn-pill-action:hover {
+      background: #e4e4e7;
+    }
+
+    .mock-btn-pill-close {
+      background: transparent;
+      border: none;
+      color: #71717a;
+      font-size: 0.9rem;
+      cursor: pointer;
+      padding: 0.2rem 0.4rem;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mock-btn-pill-close:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* PHƯƠNG ÁN B: HEADER COMPACT PILL */
+    .mock-header-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: #141418;
+      border: 1px solid #3f3f46;
+      border-radius: 9999px;
+      padding: 0.25rem 0.6rem 0.25rem 0.85rem;
+      font-size: 0.75rem;
+      color: #f4f4f5;
+      transition: all 0.2s ease;
+    }
+
+    .mock-header-pill.dismissed {
+      opacity: 0;
+      transform: scale(0.9);
+      pointer-events: none;
+    }
+
+    /* PHƯƠNG ÁN C: SCOPED BANNER CỘT GIỮA */
+    .mock-scoped-banner {
+      background: #0a0a0c;
+      border: 1px solid #27272a;
+      border-radius: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    .mock-scoped-banner.dismissed {
+      opacity: 0;
+      height: 0;
+      padding: 0;
+      margin: 0;
+      overflow: hidden;
+    }
+
+    /* Lưới so sánh 3 cột song song */
+    .side-by-side-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr));
+      gap: 1.5rem;
+      width: 100%;
+      margin-top: 1rem;
+    }
+
+    .side-card {
+      background: #0a0a0c;
+      border: 1px solid #27272a;
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .side-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #1f1f23;
+    }
+
+    .side-card-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. STICKY TOPBAR -->
+  <header class="nav-header">
+    <div class="brand-title"><span>⚡</span> BẢN THIẾT KẾ: VẼ ĐỦ CẢ 3 LỰA CHỌN VỊ TRÍ BANNER</div>
+    <nav class="tab-group" role="tablist">
+      <button class="tab-btn active" role="tab" aria-selected="true" onclick="switchTab('variant-a', this)">🌟 PA A: Floating Pill Đáy</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('variant-b', this)">🏷️ PA B: Header Pill</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('variant-c', this)">📋 PA C: Banner Cột Giữa</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('side-by-side', this)">⚖️ So Sánh Song Song 3 PA</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('explain', this)">🔍 Mổ Xẻ Kỹ Thuật (Zoom-In)</button>
+    </nav>
+  </header>
+
+  <div class="container">
+
+    <!-- =================================================================
+         TAB 1: PHƯƠNG ÁN A (FLOATING PILL ĐÁY - KHUYÊN DÙNG)
+         ================================================================= -->
+    <main id="tab-variant-a" class="tab-pane active" role="tabpanel">
+      <section class="callout" style="max-width: 46rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(34, 197, 94, 0.4);">
+        <h2 style="color: var(--accent-green);">🌟 PHƯƠNG ÁN A: FLOATING ACTION PILL Ở ĐÁY (KHUYÊN DÙNG) 🌟</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Neo nổi 1 pill tròn ở giữa đáy màn hình giống Toast Vercel: <strong>cách chữ chỉ 12px</strong>, mắt nhìn thẳng bấm ngay, <strong>hoàn toàn đéo làm xê dịch 3 cột cockpit</strong>.
+        </p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER CHO PHƯƠNG ÁN A -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">CARD 1: COMPARISON SLIDER (KÉO TRƯỢT SO SÁNH PA A VỚI HIỆN TRẠNG CŨ)</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Kéo thanh trượt để thấy 3 cột được giải phóng hoàn toàn</span>
+        </div>
+        <div class="slider-viewport" style="min-height: 510px;">
+          <!-- Layer Before: Cũ -->
+          <div class="slider-layer slider-before">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">3 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+              </div>
+              <div class="mock-dupe-banner-old diff-highlight" data-diff="annotation">
+                <span class="mock-annotation red">LỖI CŨ: NÚT XA TẬN MÉP PHẢI ~1000PX &amp; ĐÈ TỤT 3 CỘT</span>
+                <div class="mock-dupe-left">
+                  <div class="mock-dupe-icon">🗂️</div>
+                  <div class="mock-dupe-text">You have <strong>3</strong> Tab Out tabs open. Keep just this one?</div>
+                </div>
+                <button type="button" class="mock-dupe-btn">Close extras</button>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+                  <div class="mock-perspective-item">🌐 Domain <span style="color:#71717a">3</span></div>
+                  <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">3</span></div>
+                  <div class="mock-rail-new-btn">+ New perspective</div>
+                </div>
+                <div class="mock-center-board">
+                  <div class="mock-board-head">
+                    <div class="mock-board-title">Chủ đề <span style="font-size: 0.75rem; color: #71717a;">2 of 1 categories</span></div>
+                    <div class="mock-board-actions"><span class="mock-action-chip">✏️ Chỉnh sửa tags</span><span class="mock-action-chip">✕ Close all 3 tabs</span></div>
+                  </div>
+                  <div class="mock-tag-filter">&bull; Công Nghệ &amp; AI (1)</div>
+                  <div class="mock-cards-row">
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">&bull; Công Nghệ &amp; AI &bull; 1 tab open</div>
+                      <div class="mock-tab-entry"><span>🤖 ChatGPT</span><span>✕</span></div>
+                    </div>
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">Khác &bull; 2 tabs open</div>
+                      <div class="mock-tab-entry"><span>📘 Facebook</span><span>✕</span></div>
+                      <div class="mock-tab-entry"><span>🐦 Home</span><span>✕</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mock-rail-right">
+                  <div class="mock-saved-head">Saved for later <span style="color:#71717a">1 item</span></div>
+                  <div class="mock-saved-item">▶️ Phẫu thuật thẩm mỹ...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Layer After: Phương Án A -->
+          <div class="slider-layer slider-after">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">3 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+              </div>
+              <div class="mock-cockpit diff-highlight" data-diff="annotation" style="margin-bottom: 3.5rem;">
+                <span class="mock-annotation green">ĐÃ TỐI ƯU: 3 CỘT NẰM SÁT HEADER KHÔNG BỊ ĐÈ TỤT</span>
+                <div class="mock-rail-left">
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+                  <div class="mock-perspective-item">🌐 Domain <span style="color:#71717a">3</span></div>
+                  <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">3</span></div>
+                  <div class="mock-rail-new-btn">+ New perspective</div>
+                </div>
+                <div class="mock-center-board">
+                  <div class="mock-board-head">
+                    <div class="mock-board-title">Chủ đề <span style="font-size: 0.75rem; color: #71717a;">2 of 1 categories</span></div>
+                    <div class="mock-board-actions"><span class="mock-action-chip">✏️ Chỉnh sửa tags</span><span class="mock-action-chip">✕ Close all 3 tabs</span></div>
+                  </div>
+                  <div class="mock-tag-filter">&bull; Công Nghệ &amp; AI (1)</div>
+                  <div class="mock-cards-row">
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">&bull; Công Nghệ &amp; AI &bull; 1 tab open</div>
+                      <div class="mock-tab-entry"><span>🤖 ChatGPT</span><span>✕</span></div>
+                    </div>
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">Khác &bull; 2 tabs open</div>
+                      <div class="mock-tab-entry"><span>📘 Facebook</span><span>✕</span></div>
+                      <div class="mock-tab-entry"><span>🐦 Home</span><span>✕</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mock-rail-right">
+                  <div class="mock-saved-head">Saved for later <span style="color:#71717a">1 item</span></div>
+                  <div class="mock-saved-item">▶️ Phẫu thuật thẩm mỹ...</div>
+                </div>
+              </div>
+
+              <!-- FLOATING PILL ĐÁY -->
+              <div class="mock-floating-pill diff-highlight" data-diff="annotation">
+                <span class="mock-annotation green">FITTS'S LAW ĐỈNH CAO: NÚT SÁT CHỮ 12PX</span>
+                <div class="mock-pill-left">
+                  <span style="color: var(--mock-warning);">🗂️</span>
+                  <span>You have <strong>3</strong> Tab Out tabs open</span>
+                </div>
+                <div class="mock-pill-actions">
+                  <button type="button" class="mock-btn-pill-action">Close extras</button>
+                  <button type="button" class="mock-btn-pill-close">✕</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-divider"><div class="slider-knob" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <!-- CARD 2: BEFORE ONLY -->
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar">
+          <span class="card-badge badge-red">CARD 2: BEFORE ONLY (LỖI HIỆN TRẠNG)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-red);">Nút bấm bị văng xa tận cùng bên phải</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 1.25rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.04);">
+          <span class="mock-annotation red">BLOCKER FITTS'S LAW</span>
+          <div style="font-size: 0.92rem; font-weight: 700; color: var(--accent-red); margin-bottom: 0.4rem;">Cự ly ~1000px khiến việc bấm nút trở thành cực hình</div>
+          <p style="font-size: 0.85rem; color: var(--text-sub);">Banner dùng <code>justify-content: space-between</code> trên container 100% width. Mắt đọc xong bên trái phải lia chuột một quãng đường khổng lồ sang mép phải để bấm nút.</p>
+        </div>
+      </article>
+
+      <!-- CARD 3: AFTER ONLY (Tương Tác Thật PA A) -->
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar">
+          <span class="card-badge badge-green">CARD 3: AFTER ONLY (TƯƠNG TÁC THẬT PHƯƠNG ÁN A)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-green);">Bấm nút Close extras hoặc ✕ trên pill nổi để xem hiệu ứng đóng thật</span>
+        </div>
+        <div class="mock-window" id="windowA">
+          <div class="mock-header">
+            <div>
+              <div class="mock-header-title">Active tabs</div>
+              <div class="mock-header-sub">3 tabs across 1 window</div>
+            </div>
+            <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+          </div>
+          <div class="mock-cockpit" style="margin-bottom: 3.5rem;">
+            <div class="mock-rail-left">
+              <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+              <div class="mock-perspective-item">🌐 Domain <span style="color:#71717a">3</span></div>
+              <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">3</span></div>
+              <div class="mock-rail-new-btn">+ New perspective</div>
+            </div>
+            <div class="mock-center-board">
+              <div class="mock-board-head">
+                <div class="mock-board-title">Chủ đề <span style="font-size: 0.75rem; color: #71717a;">2 of 1 categories</span></div>
+                <div class="mock-board-actions"><span class="mock-action-chip">✏️ Chỉnh sửa tags</span><span class="mock-action-chip">✕ Close all 3 tabs</span></div>
+              </div>
+              <div class="mock-tag-filter">&bull; Công Nghệ &amp; AI (1)</div>
+              <div class="mock-cards-row">
+                <div class="mock-card-box">
+                  <div class="mock-card-header">&bull; Công Nghệ &amp; AI &bull; 1 tab open</div>
+                  <div class="mock-tab-entry"><span>🤖 ChatGPT</span><span>✕</span></div>
+                </div>
+                <div class="mock-card-box">
+                  <div class="mock-card-header">Khác &bull; 2 tabs open</div>
+                  <div class="mock-tab-entry"><span>📘 Facebook</span><span>✕</span></div>
+                  <div class="mock-tab-entry"><span>🐦 Home</span><span>✕</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="mock-rail-right">
+              <div class="mock-saved-head">Saved for later <span style="color:#71717a">1 item</span></div>
+              <div class="mock-saved-item">▶️ Phẫu thuật thẩm mỹ...</div>
+            </div>
+          </div>
+
+          <!-- FLOATING PILL THẬT BẤM DC -->
+          <div class="mock-floating-pill" id="livePillA">
+            <div class="mock-pill-left">
+              <span style="color: var(--mock-warning);">🗂️</span>
+              <span>You have <strong>3</strong> Tab Out tabs open</span>
+            </div>
+            <div class="mock-pill-actions">
+              <button type="button" class="mock-btn-pill-action" onclick="closeExtrasA()">Close extras</button>
+              <button type="button" class="mock-btn-pill-close" onclick="dismissPillA()">✕</button>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.8rem; color: #71717a;">Bấm Close extras để xem hiệu ứng trượt mượt mà</span>
+          <button type="button" class="tab-btn" style="border: 1px dashed #3f3f46; font-size: 0.75rem;" onclick="resetPillA()">🔄 Hiện lại Pill</button>
+        </div>
+      </article>
+    </main>
+
+    <!-- =================================================================
+         TAB 2: PHƯƠNG ÁN B (HEADER COMPACT PILL)
+         ================================================================= -->
+    <section id="tab-variant-b" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 46rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(59, 130, 246, 0.4);">
+        <h2 style="color: var(--accent-blue);">🏷️ PHƯƠNG ÁN B: TÍCH HỢP GỌN VÀO HEADER 🏷️</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Gắn thẳng 1 compact badge nhỏ gọn vào khu vực Header bên phải: <strong>đúng ngữ cảnh thông tin tổng quan của tab</strong>, nút gắn liền chữ, <strong>hoàn toàn đéo tốn diện tích thân trang</strong>.
+        </p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER CHO PHƯƠNG ÁN B -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">CARD 1: COMPARISON SLIDER (KÉO TRƯỢT SO SÁNH PA B VỚI CŨ)</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Gom cảnh báo lên Header, trả lại toàn bộ không gian cho Cockpit</span>
+        </div>
+        <div class="slider-viewport" style="min-height: 510px;">
+          <!-- Layer Before -->
+          <div class="slider-layer slider-before">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">3 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+              </div>
+              <div class="mock-dupe-banner-old diff-highlight" data-diff="annotation">
+                <span class="mock-annotation red">LỖI CŨ: BANNER NẰM CHẮN NGANG BỐ CỤC</span>
+                <div class="mock-dupe-left">
+                  <div class="mock-dupe-icon">🗂️</div>
+                  <div class="mock-dupe-text">You have <strong>3</strong> Tab Out tabs open. Keep just this one?</div>
+                </div>
+                <button type="button" class="mock-dupe-btn">Close extras</button>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+                  <div class="mock-perspective-item">🌐 Domain <span style="color:#71717a">3</span></div>
+                  <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">3</span></div>
+                </div>
+                <div class="mock-center-board">
+                  <div class="mock-board-head"><div class="mock-board-title">Chủ đề</div></div>
+                  <div class="mock-cards-row">
+                    <div class="mock-card-box"><div class="mock-tab-entry"><span>🤖 ChatGPT</span></div></div>
+                    <div class="mock-card-box"><div class="mock-tab-entry"><span>📘 Facebook</span></div></div>
+                  </div>
+                </div>
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved for later</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Layer After: Phương Án B -->
+          <div class="slider-layer slider-after">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">3 tabs across 1 window</div>
+                </div>
+                <!-- HEADER PILL -->
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                  <div class="mock-header-pill diff-highlight" data-diff="annotation">
+                    <span class="mock-annotation green">GẮN GỌN TRÊN HEADER META</span>
+                    <span style="color: var(--mock-warning);">🗂️</span>
+                    <span><strong>3</strong> Tab Out open</span>
+                    <button type="button" class="mock-btn-pill-action">Close extras</button>
+                    <button type="button" class="mock-btn-pill-close">✕</button>
+                  </div>
+                  <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+                </div>
+              </div>
+
+              <!-- Cockpit layout cực thoáng -->
+              <div class="mock-cockpit diff-highlight" data-diff="annotation">
+                <span class="mock-annotation green">3 CỘT KHÔNG BỊ ĐÈ TỤT TẸO NÀO</span>
+                <div class="mock-rail-left">
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+                  <div class="mock-perspective-item">🌐 Domain <span style="color:#71717a">3</span></div>
+                  <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">3</span></div>
+                </div>
+                <div class="mock-center-board">
+                  <div class="mock-board-head"><div class="mock-board-title">Chủ đề</div></div>
+                  <div class="mock-cards-row">
+                    <div class="mock-card-box"><div class="mock-tab-entry"><span>🤖 ChatGPT</span></div></div>
+                    <div class="mock-card-box"><div class="mock-tab-entry"><span>📘 Facebook</span></div></div>
+                  </div>
+                </div>
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved for later</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-divider"><div class="slider-knob" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <!-- CARD 2: BEFORE ONLY -->
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar">
+          <span class="card-badge badge-red">CARD 2: BEFORE ONLY (NHƯỢC ĐIỂM)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-red);">Banner to tổ bố đè vỡ phân cấp thông tin</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 1.25rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.04);">
+          <span class="mock-annotation red">LÃNG PHÍ KHÔNG GIAN</span>
+          <p style="font-size: 0.85rem; color: var(--text-sub);">Banner chiếm trọn 1 dòng ngang to tướng chỉ để nói 1 câu dọn dẹp nhẹ, trong khi Header có thừa chỗ để nhét 1 compact pill tinh tế.</p>
+        </div>
+      </article>
+
+      <!-- CARD 3: AFTER ONLY (Tương Tác Thật PA B) -->
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar">
+          <span class="card-badge badge-green">CARD 3: AFTER ONLY (TƯƠNG TÁC THẬT PHƯƠNG ÁN B)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-green);">Bấm nút Close extras trên Header để trải nghiệm</span>
+        </div>
+        <div class="mock-window">
+          <div class="mock-header">
+            <div>
+              <div class="mock-header-title">Active tabs</div>
+              <div class="mock-header-sub">3 tabs across 1 window</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <div class="mock-header-pill" id="livePillB">
+                <span style="color: var(--mock-warning);">🗂️</span>
+                <span><strong>3</strong> Tab Out open</span>
+                <button type="button" class="mock-btn-pill-action" onclick="closeExtrasB()">Close extras</button>
+                <button type="button" class="mock-btn-pill-close" onclick="dismissPillB()">✕</button>
+              </div>
+              <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+            </div>
+          </div>
+          <div class="mock-cockpit">
+            <div class="mock-rail-left">
+              <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+              <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">3</span></div>
+            </div>
+            <div class="mock-center-board">
+              <div class="mock-board-head"><div class="mock-board-title">Chủ đề</div></div>
+              <div class="mock-cards-row">
+                <div class="mock-card-box"><div class="mock-tab-entry"><span>🤖 ChatGPT</span></div></div>
+                <div class="mock-card-box"><div class="mock-tab-entry"><span>📘 Facebook</span></div></div>
+              </div>
+            </div>
+            <div class="mock-rail-right"><div class="mock-saved-head">Saved for later</div></div>
+          </div>
+        </div>
+        <div style="margin-top: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.8rem; color: #71717a;">Bấm Close extras để thấy pill thu nhỏ và biến mất mượt mà</span>
+          <button type="button" class="tab-btn" style="border: 1px dashed #3f3f46; font-size: 0.75rem;" onclick="resetPillB()">🔄 Hiện lại Pill Header</button>
+        </div>
+      </article>
+    </section>
+
+    <!-- =================================================================
+         TAB 3: PHƯƠNG ÁN C (BANNER THU GỌN TRONG CỘT GIỮA)
+         ================================================================= -->
+    <section id="tab-variant-c" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 46rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(234, 179, 8, 0.4);">
+        <h2 style="color: var(--accent-yellow);">📋 PHƯƠNG ÁN C: BANNER THU GỌN TRONG CỘT GIỮA 📋</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Nếu vẫn thích dạng banner phẳng truyền thống: <strong>gói gọn nó vào bên trong Cột 2 (Center board)</strong>, không cho tràn sang 2 cột bên cạnh, <strong>rút ngắn cự ly nút bấm ngay cạnh text</strong>.
+        </p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER CHO PHƯƠNG ÁN C -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">CARD 1: COMPARISON SLIDER (KÉO TRƯỢT SO SÁNH PA C VỚI CŨ)</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Thu hẹp phạm vi banner vào đúng cột giữa</span>
+        </div>
+        <div class="slider-viewport" style="min-height: 510px;">
+          <!-- Layer Before -->
+          <div class="slider-layer slider-before">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">3 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+              </div>
+              <div class="mock-dupe-banner-old diff-highlight" data-diff="annotation">
+                <span class="mock-annotation red">LỖI CŨ: TRÀN TOÀN MÀN HÌNH ĐÈ TỤT CẢ 3 CỘT</span>
+                <div class="mock-dupe-left">
+                  <div class="mock-dupe-icon">🗂️</div>
+                  <div class="mock-dupe-text">You have <strong>3</strong> Tab Out tabs open. Keep just this one?</div>
+                </div>
+                <button type="button" class="mock-dupe-btn">Close extras</button>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left"><div class="mock-rail-title"><span>PERSPECTIVES</span></div></div>
+                <div class="mock-center-board"><div class="mock-board-head"><div class="mock-board-title">Chủ đề</div></div></div>
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved for later</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Layer After: Phương Án C -->
+          <div class="slider-layer slider-after">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">3 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left diff-highlight" data-diff="annotation">
+                  <span class="mock-annotation green">CỘT TRÁI ĐỨNG THẲNG MỘT MÌNH</span>
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span></div>
+                  <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">3</span></div>
+                </div>
+
+                <!-- CỘT GIỮA CHỨA BANNER SCOPED -->
+                <div class="mock-center-board">
+                  <div class="mock-scoped-banner diff-highlight" data-diff="annotation">
+                    <span class="mock-annotation green">BANNER SCOPED TRONG CỘT GIỮA, NÚT SÁT BÊN</span>
+                    <div class="mock-dupe-left">
+                      <div class="mock-dupe-icon">🗂️</div>
+                      <div class="mock-dupe-text">You have <strong>3</strong> Tab Out tabs open</div>
+                    </div>
+                    <div style="display: flex; gap: 0.35rem; align-items: center;">
+                      <button type="button" class="mock-dupe-btn">Close extras</button>
+                      <button type="button" class="mock-btn-pill-close">✕</button>
+                    </div>
+                  </div>
+
+                  <div class="mock-board-head"><div class="mock-board-title">Chủ đề</div></div>
+                  <div class="mock-cards-row">
+                    <div class="mock-card-box"><div class="mock-tab-entry"><span>🤖 ChatGPT</span></div></div>
+                    <div class="mock-card-box"><div class="mock-tab-entry"><span>📘 Facebook</span></div></div>
+                  </div>
+                </div>
+
+                <div class="mock-rail-right diff-highlight" data-diff="annotation">
+                  <span class="mock-annotation green">CỘT PHẢI ĐỨNG THẲNG MỘT MÌNH</span>
+                  <div class="mock-saved-head">Saved for later</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-divider"><div class="slider-knob" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <!-- CARD 2: BEFORE ONLY -->
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar">
+          <span class="card-badge badge-red">CARD 2: BEFORE ONLY (NHƯỢC ĐIỂM CŨ)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-red);">Cột trái và cột phải bị phạt oan uổng</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 1.25rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.04);">
+          <span class="mock-annotation red">PHẠM VI QUÁ RỘNG</span>
+          <p style="font-size: 0.85rem; color: var(--text-sub);">Banner cũ nằm ở cấp độ toàn cục <code>#main</code> nên ép cả 2 rail hai bên phải tụt xuống theo, dù thông báo tabs chủ yếu liên quan tới khu vực quản lý tabs ở cột giữa.</p>
+        </div>
+      </article>
+
+      <!-- CARD 3: AFTER ONLY (Tương Tác Thật PA C) -->
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar">
+          <span class="card-badge badge-green">CARD 3: AFTER ONLY (TƯƠNG TÁC THẬT PHƯƠNG ÁN C)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-green);">Bấm Close extras trong cột giữa để xem hiệu ứng đóng</span>
+        </div>
+        <div class="mock-window">
+          <div class="mock-header">
+            <div>
+              <div class="mock-header-title">Active tabs</div>
+              <div class="mock-header-sub">3 tabs across 1 window</div>
+            </div>
+            <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>3 open tabs</strong></div>
+          </div>
+          <div class="mock-cockpit">
+            <div class="mock-rail-left">
+              <div class="mock-rail-title"><span>PERSPECTIVES</span></div>
+              <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">3</span></div>
+            </div>
+            <div class="mock-center-board">
+              <div class="mock-scoped-banner" id="livePillC">
+                <div class="mock-dupe-left">
+                  <div class="mock-dupe-icon">🗂️</div>
+                  <div class="mock-dupe-text">You have <strong>3</strong> Tab Out tabs open</div>
+                </div>
+                <div style="display: flex; gap: 0.35rem; align-items: center;">
+                  <button type="button" class="mock-dupe-btn" onclick="closeExtrasC()">Close extras</button>
+                  <button type="button" class="mock-btn-pill-close" onclick="dismissPillC()">✕</button>
+                </div>
+              </div>
+              <div class="mock-board-head"><div class="mock-board-title">Chủ đề</div></div>
+              <div class="mock-cards-row">
+                <div class="mock-card-box"><div class="mock-tab-entry"><span>🤖 ChatGPT</span></div></div>
+                <div class="mock-card-box"><div class="mock-tab-entry"><span>📘 Facebook</span></div></div>
+              </div>
+            </div>
+            <div class="mock-rail-right"><div class="mock-saved-head">Saved for later</div></div>
+          </div>
+        </div>
+        <div style="margin-top: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.8rem; color: #71717a;">Bấm Close extras để xem banner thu gọn lại êm ái</span>
+          <button type="button" class="tab-btn" style="border: 1px dashed #3f3f46; font-size: 0.75rem;" onclick="resetPillC()">🔄 Hiện lại Banner Cột Giữa</button>
+        </div>
+      </article>
+    </section>
+
+    <!-- =================================================================
+         TAB 4: SO SÁNH SONG SONG 3 PHƯƠNG ÁN (SIDE-BY-SIDE TRỰC DIỆN)
+         ================================================================= -->
+    <section id="tab-side-by-side" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 50rem; margin: 0 auto 2rem; text-align: center;">
+        <h2>⚖️ BẢNG SO SÁNH THỊ GIÁC SONG SONG CẢ 3 LỰA CHỌN ⚖️</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Đặt cả 3 phương án nằm cạnh nhau để m soi trực tiếp về độ thoáng, sự phân cấp và khoảng cách thao tác.
+        </p>
+      </section>
+
+      <div class="side-by-side-grid">
+        <!-- CỘT PA A -->
+        <div class="side-card" style="border-top: 3px solid var(--accent-green);">
+          <div class="side-card-head">
+            <span class="side-card-title" style="color: var(--accent-green);">🌟 Phương Án A (Khuyên dùng)</span>
+            <span class="meta-tag green">Đáy màn hình</span>
+          </div>
+          <p style="font-size: 0.82rem; color: #a1a1aa; line-height: 1.5;">
+            Floating Action Pill neo cố định ở đáy. 3 cột phẳng 100%, nút bấm kề sát sườn câu hỏi.
+          </p>
+          <div class="mock-window" style="min-height: 380px; padding: 1rem;">
+            <div class="mock-header">
+              <div class="mock-header-title" style="font-size: 0.95rem;">Active tabs</div>
+              <div class="mock-header-meta" style="font-size: 0.65rem;">3 open tabs</div>
+            </div>
+            <div class="mock-cockpit" style="grid-template-columns: 80px 1fr 100px; gap: 0.5rem; font-size: 0.65rem;">
+              <div class="mock-rail-left"><div class="mock-perspective-item active">Chủ đề</div></div>
+              <div class="mock-center-board"><div class="mock-card-box"><div class="mock-tab-entry">ChatGPT</div></div></div>
+              <div class="mock-rail-right"><div class="mock-saved-item">Saved</div></div>
+            </div>
+            <div class="mock-floating-pill" style="bottom: 0.75rem; padding: 0.35rem 0.5rem 0.35rem 0.75rem; font-size: 0.72rem;">
+              <span><strong>3</strong> Tab Out</span>
+              <button type="button" class="mock-btn-pill-action" style="font-size: 0.68rem; padding: 0.15rem 0.5rem;" onclick="showToast('✅ Đã đóng tabs thừa (PA A)!')">Close</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CỘT PA B -->
+        <div class="side-card" style="border-top: 3px solid var(--accent-blue);">
+          <div class="side-card-head">
+            <span class="side-card-title" style="color: var(--accent-blue);">🏷️ Phương Án B</span>
+            <span class="meta-tag blue">Trên Header</span>
+          </div>
+          <p style="font-size: 0.82rem; color: #a1a1aa; line-height: 1.5;">
+            Pill nhỏ gắn ngay khu vực Header. Rất gọn gàng, thuộc về metadata chung của trang.
+          </p>
+          <div class="mock-window" style="min-height: 380px; padding: 1rem;">
+            <div class="mock-header">
+              <div class="mock-header-title" style="font-size: 0.95rem;">Active tabs</div>
+              <div class="mock-header-pill" style="margin-left: auto; font-size: 0.68rem; padding: 0.15rem 0.4rem 0.15rem 0.6rem;">
+                <span><strong>3</strong> dupes</span>
+                <button type="button" class="mock-btn-pill-action" style="font-size: 0.65rem; padding: 0.15rem 0.4rem;" onclick="showToast('✅ Đã đóng tabs thừa (PA B)!')">Close</button>
+              </div>
+            </div>
+            <div class="mock-cockpit" style="grid-template-columns: 80px 1fr 100px; gap: 0.5rem; font-size: 0.65rem;">
+              <div class="mock-rail-left"><div class="mock-perspective-item active">Chủ đề</div></div>
+              <div class="mock-center-board"><div class="mock-card-box"><div class="mock-tab-entry">ChatGPT</div></div></div>
+              <div class="mock-rail-right"><div class="mock-saved-item">Saved</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CỘT PA C -->
+        <div class="side-card" style="border-top: 3px solid var(--accent-yellow);">
+          <div class="side-card-head">
+            <span class="side-card-title" style="color: var(--accent-yellow);">📋 Phương Án C</span>
+            <span class="meta-tag yellow">Trong Cột Giữa</span>
+          </div>
+          <p style="font-size: 0.82rem; color: #a1a1aa; line-height: 1.5;">
+            Banner dạng hộp phẳng thu hẹp trong cột giữa. Không lan sang 2 rail bên cạnh.
+          </p>
+          <div class="mock-window" style="min-height: 380px; padding: 1rem;">
+            <div class="mock-header">
+              <div class="mock-header-title" style="font-size: 0.95rem;">Active tabs</div>
+              <div class="mock-header-meta" style="font-size: 0.65rem;">3 open tabs</div>
+            </div>
+            <div class="mock-cockpit" style="grid-template-columns: 80px 1fr 100px; gap: 0.5rem; font-size: 0.65rem;">
+              <div class="mock-rail-left"><div class="mock-perspective-item active">Chủ đề</div></div>
+              <div class="mock-center-board">
+                <div class="mock-scoped-banner" style="padding: 0.35rem 0.5rem; font-size: 0.68rem; margin-bottom: 0.4rem;">
+                  <span>3 Tab Out dupes</span>
+                  <button type="button" class="mock-dupe-btn" style="font-size: 0.65rem; padding: 0.15rem 0.4rem;" onclick="showToast('✅ Đã đóng tabs thừa (PA C)!')">Close</button>
+                </div>
+                <div class="mock-card-box"><div class="mock-tab-entry">ChatGPT</div></div>
+              </div>
+              <div class="mock-rail-right"><div class="mock-saved-item">Saved</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         TAB 5: GIẢI THÍCH KỸ THUẬT (ZOOM-IN)
+         ================================================================= -->
+    <section id="tab-explain" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 1/4 • VĨ MÔ &amp; LAYOUT</div>
+            <h3>📐 1. Giải Phóng Bố Cục 3 Cột</h3>
+            <p>Hiện trạng banner nằm giữa Header và Cockpit Columns, trải ngang 100% làm đè tụt toàn bộ nội dung. Giải pháp tách banner ra khỏi dòng chảy tài liệu (DOM Flow) hoặc gói gọn vào Header giúp 3 cột phẳng đều tuyệt đối.</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag green">Non-blocking</span>
+              <span class="meta-tag blue">Layout Integrity</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot green"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 extension/index.html (Cấu trúc DOM)</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot html"></span> HTML</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">&lt;<span class="tag">main</span> <span class="attr">id</span>=<span class="str">"main"</span>&gt;</span></div>
+              <div class="c-line del"><span class="c-sign">-</span><span class="c-text">  &lt;<span class="tag">div</span> <span class="attr">class</span>=<span class="str">"tab-cleanup-banner"</span> <span class="attr">id</span>=<span class="str">"tabOutDupeBanner"</span>&gt;...&lt;/<span class="tag">div</span>&gt;</span><span class="c-comment"># Nằm đè lên trên làm tụt 3 cột</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  &lt;<span class="tag">div</span> <span class="attr">class</span>=<span class="str">"dashboard-columns cockpit-columns"</span>&gt;</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">    &lt;<span class="tag">aside</span> <span class="attr">class</span>=<span class="str">"perspective-rail"</span>&gt;...&lt;/<span class="tag">aside</span>&gt;</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">    &lt;<span class="tag">div</span> <span class="attr">class</span>=<span class="str">"perspective-board"</span>&gt;...&lt;/<span class="tag">div</span>&gt;</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">    &lt;<span class="tag">aside</span> <span class="attr">class</span>=<span class="str">"saved-rail"</span>&gt;...&lt;/<span class="tag">aside</span>&gt;</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  &lt;/<span class="tag">div</span>&gt;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  &lt;<span class="tag">div</span> <span class="attr">class</span>=<span class="str">"tabout-floating-pill"</span> <span class="attr">id</span>=<span class="str">"tabOutDupeBanner"</span>&gt;...&lt;/<span class="tag">div</span>&gt;</span><span class="c-comment"># Neo đáy fixed độc lập!</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">&lt;/<span class="tag">main</span>&gt;</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 2/4 • CƠ CHẾ FITTS'S LAW</div>
+            <h3>🎯 2. Rút Ngắn Cự Ly Thao Tác (Fitts's Law)</h3>
+            <p>Định luật Fitts chỉ ra rằng thời gian chạm tới mục tiêu tỷ lệ thuận với khoảng cách. Thu hẹp khoảng cách giữa câu hỏi và nút từ 1000px xuống còn 12px giúp thao tác nhanh gấp 10 lần mà không cần đảo mắt.</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag green">12px Gap</span>
+              <span class="meta-tag yellow">High Ergonomics</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot yellow"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 So sánh CSS Cự Ly (style.css)</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot css"></span> CSS</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line del"><span class="c-sign">-</span><span class="c-text">.tab-cleanup-banner { <span class="prop">justify-content</span>: <span class="str">space-between</span>; <span class="prop">width</span>: <span class="num">100%</span>; }</span><span class="c-comment"># văng xa 1000px</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">.tabout-floating-pill {</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="prop">position</span>: <span class="str">fixed</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="prop">bottom</span>: <span class="num">24px</span>; <span class="prop">left</span>: <span class="num">50%</span>; <span class="prop">transform</span>: <span class="fn">translateX</span>(-50%);</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="prop">display</span>: <span class="str">flex</span>; <span class="prop">align-items</span>: <span class="str">center</span>; <span class="prop">gap</span>: <span class="num">12px</span>;</span><span class="c-comment"># Nút sát chữ 12px!</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">}</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <!-- Nút Inspector Toggle Fixed -->
+  <button id="inspector-toggle" onclick="toggleDiff()">
+    <span>🔍 Check Diff</span>
+    <span id="diffStatusTag">[BẬT]</span>
+  </button>
+
+  <script src="./visual-core.js"></script>
+
+  <script>
+    // Logic tương tác riêng cho từng Phương Án
+
+    // --- PA A ---
+    function closeExtrasA() {
+      const el = document.getElementById('livePillA');
+      if (el) el.classList.add('dismissed');
+      showToast('✅ [Phương Án A] Đã đóng các tab Tab Out thừa!', 'success');
+    }
+    function dismissPillA() {
+      const el = document.getElementById('livePillA');
+      if (el) el.classList.add('dismissed');
+      showToast('Đã ẩn thông báo dupe tabs', 'info');
+    }
+    function resetPillA() {
+      const el = document.getElementById('livePillA');
+      if (el) el.classList.remove('dismissed');
+      showToast('🔄 Đã khôi phục Floating Pill PA A', 'success');
+    }
+
+    // --- PA B ---
+    function closeExtrasB() {
+      const el = document.getElementById('livePillB');
+      if (el) el.classList.add('dismissed');
+      showToast('✅ [Phương Án B] Đã đóng các tab Tab Out thừa trên Header!', 'success');
+    }
+    function dismissPillB() {
+      const el = document.getElementById('livePillB');
+      if (el) el.classList.add('dismissed');
+      showToast('Đã ẩn Header Pill', 'info');
+    }
+    function resetPillB() {
+      const el = document.getElementById('livePillB');
+      if (el) el.classList.remove('dismissed');
+      showToast('🔄 Đã khôi phục Header Pill PA B', 'success');
+    }
+
+    // --- PA C ---
+    function closeExtrasC() {
+      const el = document.getElementById('livePillC');
+      if (el) el.classList.add('dismissed');
+      showToast('✅ [Phương Án C] Đã đóng các tab Tab Out thừa trong Cột Giữa!', 'success');
+    }
+    function dismissPillC() {
+      const el = document.getElementById('livePillC');
+      if (el) el.classList.add('dismissed');
+      showToast('Đã ẩn Banner Cột Giữa', 'info');
+    }
+    function resetPillC() {
+      const el = document.getElementById('livePillC');
+      if (el) el.classList.remove('dismissed');
+      showToast('🔄 Đã khôi phục Banner PA C', 'success');
+    }
+  </script>
+</body>
+</html>

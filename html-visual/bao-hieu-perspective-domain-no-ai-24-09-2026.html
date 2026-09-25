@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bản Thiết Kế: Báo Hiệu Perspective Domain Không Dùng AI</title>
+  <link rel="stylesheet" href="./visual-core.css">
+
+  <style>
+    /* CSS Tùy biến riêng cho Cockpit Mockup của Tab Out */
+    :root {
+      --mock-bg: #000000;
+      --mock-surface: #0a0a0c;
+      --mock-card: #0e0e11;
+      --mock-card-border: #1f1f24;
+      --mock-hover: #18181d;
+      --mock-text-pri: #f4f4f5;
+      --mock-text-sec: #a1a1aa;
+      --mock-text-ter: #71717a;
+      --mock-accent-green: #22c55e;
+      --mock-accent-blue: #38bdf8;
+      --mock-accent-purple: #c084fc;
+      --mock-accent-amber: #f59e0b;
+    }
+
+    .cockpit-canvas {
+      background: var(--mock-bg);
+      border: 1px solid #1f1f23;
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--mock-text-pri);
+      width: 100%;
+      box-sizing: border-box;
+      display: grid;
+      grid-template-columns: 14rem 1fr;
+      gap: 1.25rem;
+      min-height: 24rem;
+    }
+
+    /* SIDEBAR MOCK */
+    .mock-sidebar {
+      border-right: 1px solid var(--mock-card-border);
+      padding-right: 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .mock-sidebar-top {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .mock-sidebar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 0.5rem 0.5rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--mock-text-ter);
+      text-transform: uppercase;
+    }
+
+    .mock-perspective-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .mock-p-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0.65rem;
+      border-radius: 0.45rem;
+      font-size: 0.825rem;
+      color: var(--mock-text-sec);
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .mock-p-item:hover {
+      background: var(--mock-hover);
+      color: var(--mock-text-pri);
+    }
+
+    .mock-p-item.active {
+      background: #18181c;
+      color: #ffffff;
+      font-weight: 600;
+      border-color: #27272a;
+    }
+
+    .mock-p-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+    }
+
+    .mock-p-icon {
+      width: 1rem;
+      height: 1rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .mock-p-count {
+      font-size: 0.7rem;
+      background: #000000;
+      border: 1px solid #27272a;
+      border-radius: 9999px;
+      padding: 0.1rem 0.4rem;
+      color: var(--mock-text-ter);
+      font-family: monospace;
+    }
+
+    .mock-ai-sparkle {
+      color: var(--mock-accent-purple);
+      font-size: 0.75rem;
+      margin-left: 0.25rem;
+    }
+
+    .mock-ai-badge-subtle {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.05rem 0.35rem;
+      border-radius: 0.25rem;
+      background: rgba(192, 132, 252, 0.15);
+      color: var(--mock-accent-purple);
+      border: 1px solid rgba(192, 132, 252, 0.3);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .mock-local-badge-subtle {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.05rem 0.35rem;
+      border-radius: 0.25rem;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--mock-accent-blue);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+
+    /* TELEMETRY FOOTER */
+    .mock-telemetry-box {
+      margin-top: 1.5rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--mock-card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.75rem;
+    }
+
+    .mock-telemetry-left {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .mock-telemetry-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 9999px;
+      flex-shrink: 0;
+    }
+
+    .mock-telemetry-dot.green {
+      background: var(--mock-accent-green);
+      box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+    }
+
+    .mock-telemetry-dot.blue {
+      background: var(--mock-accent-blue);
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+    }
+
+    .mock-telemetry-dot.muted {
+      background: var(--mock-text-ter);
+    }
+
+    .mock-gear-btn {
+      color: var(--mock-text-ter);
+      cursor: pointer;
+    }
+
+    /* MAIN VIEW MOCK */
+    .mock-main-view {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      min-width: 0;
+    }
+
+    .mock-view-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--mock-card-border);
+    }
+
+    .mock-view-title-group {
+      display: flex;
+      align-items: baseline;
+      gap: 0.65rem;
+    }
+
+    .mock-view-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--mock-text-pri);
+    }
+
+    .mock-view-sub {
+      font-size: 0.8rem;
+      color: var(--mock-text-sec);
+    }
+
+    .mock-close-all-btn {
+      background: transparent;
+      border: 1px solid var(--mock-card-border);
+      border-radius: 0.35rem;
+      color: var(--mock-text-sec);
+      font-size: 0.75rem;
+      padding: 0.25rem 0.6rem;
+      cursor: pointer;
+    }
+
+    /* MISSION CARDS GRID */
+    .mock-cards-layout {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+      gap: 0.75rem;
+    }
+
+    .mock-m-card {
+      background: var(--mock-card);
+      border: 1px solid var(--mock-card-border);
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .mock-m-head {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .mock-chip {
+      background: #141418;
+      border: 1px solid #222228;
+      border-radius: 0.35rem;
+      padding: 0.3rem 0.45rem;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--mock-text-sec);
+    }
+
+    .mock-chip-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 9rem;
+    }
+
+    /* INTERACTIVE CONTROLS BAR */
+    .mock-interactive-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #121216;
+      border: 1px solid #27272a;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .mock-interactive-actions {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .interactive-badge-status {
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. STICKY TOPBAR -->
+  <header class="nav-header">
+    <div class="brand-title"><span>⚡</span> BẢN THIẾT KẾ: BÁO HIỆU PERSPECTIVE DOMAIN KHÔNG DÙNG AI</div>
+    <nav class="tab-group" role="tablist">
+      <button class="tab-btn active" role="tab" aria-selected="true" onclick="switchTab('summarize', this)">📌 Tóm Lược &amp; So Sánh</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('explain', this)">🔍 Mổ Xẻ Kỹ Thuật (Zoom-In)</button>
+    </nav>
+  </header>
+
+  <div class="container">
+    <!-- =================================================================
+         TAB 1: TÓM LƯỢC (DEFAULT) - CHUẨN 3 CARDS THỊ GIÁC
+         ================================================================= -->
+    <main id="tab-summarize" class="tab-pane active" role="tabpanel">
+      <section class="callout">
+        <h2>🗣️ TÓM LƯỢC &amp; Ý CHÍNH 🗣️</h2>
+        <p>Chuyển thanh telemetry dưới chân sidebar sang trạng thái <strong>⚡ Local (0 tokens)</strong> khi chọn perspective Domain, đồng thời gắn icon <strong>✦ sparkles</strong> cho các perspective thực sự dùng AI thay vì dán nhãn phủ định "Không AI" thô thiển.</p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER (CSS GRID STACK - NATIVE ANTI-CUTOFF) -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">CARD 1: COMPARISON SLIDER</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Kéo trượt con trỏ để so sánh Trước / Sau</span>
+        </div>
+        <div class="slider-viewport">
+          <!-- LAYER BEFORE (HIỆN TRẠNG CŨ: DỄ GÂY HIỂU LẦM) -->
+          <div class="slider-layer slider-before">
+            <div class="cockpit-canvas">
+              <!-- Sidebar cũ -->
+              <div class="mock-sidebar">
+                <div class="mock-sidebar-top">
+                  <div class="mock-sidebar-header">
+                    <span>Perspectives</span>
+                    <span>+</span>
+                  </div>
+                  <div class="mock-perspective-list">
+                    <div class="mock-p-item active">
+                      <div class="mock-p-left">
+                        <span class="mock-p-icon">🌐</span>
+                        <span>Domain</span>
+                      </div>
+                      <span class="mock-p-count">5</span>
+                    </div>
+                    <div class="mock-p-item">
+                      <div class="mock-p-left">
+                        <span class="mock-p-icon">🏷️</span>
+                        <span>Chủ đề</span>
+                      </div>
+                      <span class="mock-p-count">5</span>
+                    </div>
+                    <div class="mock-p-item">
+                      <div class="mock-p-left">
+                        <span class="mock-p-icon">🎯</span>
+                        <span>Mục đích</span>
+                      </div>
+                      <span class="mock-p-count">5</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Telemetry cũ: Báo OpenRouter xanh lè dù đang ở Domain! -->
+                <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 0.5rem; border-radius: 0.4rem; background: rgba(239, 68, 68, 0.08);">
+                  <span class="mock-annotation red">LỖI GÂY LÚ: CHẤM XANH OPENROUTER XUẤT HIỆN Ở TẤT CẢ VIEW</span>
+                  <div class="mock-telemetry-box" style="margin-top: 0; padding-top: 0; border-top: none;">
+                    <div class="mock-telemetry-left">
+                      <span class="mock-telemetry-dot green"></span>
+                      <span style="font-weight: 500; color: #ffffff;">OpenRouter (jev)</span>
+                    </div>
+                    <span class="mock-gear-btn">⚙️</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Main content cũ -->
+              <div class="mock-main-view">
+                <div class="mock-view-header">
+                  <div class="mock-view-title-group">
+                    <span class="mock-view-title">Open tabs</span>
+                    <span class="mock-view-sub">4 domains</span>
+                  </div>
+                  <button type="button" class="mock-close-all-btn">✕ Close all 5 tabs</button>
+                </div>
+                <div class="mock-cards-layout">
+                  <div class="mock-m-card">
+                    <div class="mock-m-head"><span>Homepages</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">x.com/home</span><span>✕</span></div>
+                  </div>
+                  <div class="mock-m-card">
+                    <div class="mock-m-head"><span>YouTube</span> <span style="color:var(--mock-text-ter)">2 tabs</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">One More Drink?</span><span>✕</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">Phẫu thuật thẩm mỹ...</span><span>✕</span></div>
+                  </div>
+                  <div class="mock-m-card">
+                    <div class="mock-m-head"><span>Facebook</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">Facebook Home</span><span>✕</span></div>
+                  </div>
+                  <div class="mock-m-card">
+                    <div class="mock-m-head"><span>ChatGPT</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">ChatGPT</span><span>✕</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LAYER AFTER (GIẢI PHÁP MỚI: RÕ RÀNG & TINH TẾ) -->
+          <div class="slider-layer slider-after">
+            <div class="cockpit-canvas">
+              <!-- Sidebar mới -->
+              <div class="mock-sidebar">
+                <div class="mock-sidebar-top">
+                  <div class="mock-sidebar-header">
+                    <span>Perspectives</span>
+                    <span>+</span>
+                  </div>
+                  <div class="mock-perspective-list">
+                    <!-- Domain: Native, Không AI, sạch sẽ -->
+                    <div class="mock-p-item active">
+                      <div class="mock-p-left">
+                        <span class="mock-p-icon">🌐</span>
+                        <span>Domain</span>
+                      </div>
+                      <span class="mock-p-count">5</span>
+                    </div>
+
+                    <!-- AI Perspectives: Có icon Sparkles ✦ nhận diện -->
+                    <div class="diff-highlight" data-diff="annotation" style="position: relative; border-radius: 0.4rem; padding: 0.15rem; background: rgba(34, 197, 94, 0.08);">
+                      <span class="mock-annotation green">ICON ✦ ĐÁNH DẤU PERSPECTIVE CÓ DÙNG AI</span>
+                      <div class="mock-p-item" style="border: none;">
+                        <div class="mock-p-left">
+                          <span class="mock-p-icon" style="color:var(--mock-accent-purple);">✦</span>
+                          <span>Chủ đề</span>
+                        </div>
+                        <span class="mock-p-count">5</span>
+                      </div>
+                      <div class="mock-p-item" style="border: none;">
+                        <div class="mock-p-left">
+                          <span class="mock-p-icon" style="color:var(--mock-accent-purple);">✦</span>
+                          <span>Mục đích</span>
+                        </div>
+                        <span class="mock-p-count">5</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Telemetry mới: Phản ánh đúng ngữ cảnh 0ms Local khi ở Domain! -->
+                <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 0.5rem; border-radius: 0.4rem; background: rgba(34, 197, 94, 0.08);">
+                  <span class="mock-annotation green">TELEMETRY BÁO ⚡ LOCAL (0 TOKENS) KHI CHỌN DOMAIN</span>
+                  <div class="mock-telemetry-box" style="margin-top: 0; padding-top: 0; border-top: none;">
+                    <div class="mock-telemetry-left">
+                      <span class="mock-telemetry-dot blue"></span>
+                      <span style="font-weight: 600; color: var(--mock-accent-blue);">⚡ Local (0 tokens)</span>
+                    </div>
+                    <span class="mock-gear-btn">⚙️</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Main content mới: Header có nhãn Local -->
+              <div class="mock-main-view">
+                <div class="mock-view-header">
+                  <div class="mock-view-title-group">
+                    <span class="mock-view-title">Open tabs</span>
+                    <span class="mock-view-sub">
+                      4 domains <span class="mock-local-badge-subtle">⚡ 0ms Local</span>
+                    </span>
+                  </div>
+                  <button type="button" class="mock-close-all-btn">✕ Close all 5 tabs</button>
+                </div>
+                <div class="mock-cards-layout">
+                  <div class="mock-m-card">
+                    <div class="mock-m-head"><span>Homepages</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">x.com/home</span><span>✕</span></div>
+                  </div>
+                  <div class="mock-m-card">
+                    <div class="mock-m-head"><span>YouTube</span> <span style="color:var(--mock-text-ter)">2 tabs</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">One More Drink?</span><span>✕</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">Phẫu thuật thẩm mỹ...</span><span>✕</span></div>
+                  </div>
+                  <div class="mock-m-card">
+                    <div class="mock-m-head"><span>Facebook</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">Facebook Home</span><span>✕</span></div>
+                  </div>
+                  <div class="mock-m-card">
+                    <div class="mock-m-head"><span>ChatGPT</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                    <div class="mock-chip"><span class="mock-chip-title">ChatGPT</span><span>✕</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Slider Divider & Knob -->
+          <div class="slider-divider">
+            <div class="slider-knob" role="slider" aria-label="So sánh Trước và Sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div>
+          </div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <!-- CARD 2: BEFORE ONLY (Hiện trạng lỗi/gây hiểu lầm) -->
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar">
+          <span class="card-badge badge-red">CARD 2: BEFORE ONLY</span>
+          <span style="font-size: 0.85rem; color: var(--accent-red);">Hiện trạng cũ: Người dùng không phân biệt được đâu là local, đâu là AI</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 1.5rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.04);">
+          <span class="mock-annotation red">VẤN ĐỀ TRẢI NGHIỆM</span>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <span class="diff-tag del">- CŨ</span>
+            <span style="font-size: 0.95rem; font-weight: 700; color: var(--accent-red);">Telemetry trạng thái tĩnh &amp; Perspective đồng bộ phẳng</span>
+          </div>
+          <p style="font-size: 0.88rem; color: var(--text-sub); line-height: 1.6; margin-bottom: 1rem;">
+            • Dù đang đứng ở tab <code>Domain</code> (thuần thuật toán cắt URL 0ms, không tốn 1 token nào), telemetry ở đáy sidebar vẫn luôn báo <code>● OpenRouter (jev)</code> màu xanh sẵn sàng.<br>
+            • Người dùng mở giao diện lên sẽ có cảm giác bất an: <em>"Ủa tab Domain này nó có ngầm gọi API tốn tiền của mình không?"</em>.<br>
+            • Không có dấu hiệu nhận biết trực quan giữa thuật toán máy chạy bằng cơm và mô hình trí tuệ nhân tạo.
+          </p>
+
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" class="tab-btn" style="border: 1px solid var(--border);" onclick="showToast('⚠️ Hiện trạng cũ: Telemetry không thay đổi khi chuyển tab!', 'error')">
+              ⚠️ Kiểm tra lỗi nhận thức (User Confusion)
+            </button>
+          </div>
+        </div>
+      </article>
+
+      <!-- CARD 3: AFTER ONLY (Giải pháp hoàn thiện + Tương tác trực tiếp) -->
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar">
+          <span class="card-badge badge-green">CARD 3: AFTER ONLY (INTERACTIVE DEMO)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-green);">Bấm chuyển perspective để xem Telemetry &amp; Header tự động đồng bộ</span>
+        </div>
+
+        <div class="mock-interactive-bar">
+          <div class="interactive-badge-status">
+            <span>Trạng thái đang chọn:</span>
+            <strong id="demo-active-name" style="color: var(--mock-accent-blue);">🌐 Domain (Local Engine)</strong>
+          </div>
+          <div class="mock-interactive-actions">
+            <button type="button" class="tab-btn active" id="btn-select-domain" onclick="demoSwitchPerspective('domain')">
+              🌐 Chọn Domain
+            </button>
+            <button type="button" class="tab-btn" id="btn-select-topic" onclick="demoSwitchPerspective('topic')">
+              ✦ Chọn Chủ đề (AI)
+            </button>
+          </div>
+        </div>
+
+        <!-- Cockpit Live Mockup -->
+        <div class="cockpit-canvas" id="live-cockpit">
+          <!-- Sidebar -->
+          <div class="mock-sidebar">
+            <div class="mock-sidebar-top">
+              <div class="mock-sidebar-header">
+                <span>Perspectives</span>
+                <span>+</span>
+              </div>
+              <div class="mock-perspective-list">
+                <div class="mock-p-item active" id="live-p-domain" onclick="demoSwitchPerspective('domain')">
+                  <div class="mock-p-left">
+                    <span class="mock-p-icon">🌐</span>
+                    <span>Domain</span>
+                  </div>
+                  <span class="mock-p-count">5</span>
+                </div>
+                <div class="mock-p-item" id="live-p-topic" onclick="demoSwitchPerspective('topic')">
+                  <div class="mock-p-left">
+                    <span class="mock-p-icon" style="color:var(--mock-accent-purple);">✦</span>
+                    <span>Chủ đề</span>
+                  </div>
+                  <span class="mock-ai-badge-subtle">AI</span>
+                  <span class="mock-p-count">5</span>
+                </div>
+                <div class="mock-p-item" id="live-p-purpose" onclick="demoSwitchPerspective('purpose')">
+                  <div class="mock-p-left">
+                    <span class="mock-p-icon" style="color:var(--mock-accent-purple);">✦</span>
+                    <span>Mục đích</span>
+                  </div>
+                  <span class="mock-ai-badge-subtle">AI</span>
+                  <span class="mock-p-count">5</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Dynamic Telemetry Box -->
+            <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 0.5rem; border-radius: 0.4rem; background: rgba(34, 197, 94, 0.08);">
+              <span class="mock-annotation green">ĐỒNG BỘ THEO NGỮ CẢNH PERSPECTIVE</span>
+              <div class="mock-telemetry-box" style="margin-top: 0; padding-top: 0; border-top: none;">
+                <div class="mock-telemetry-left">
+                  <span class="mock-telemetry-dot blue" id="live-telemetry-dot"></span>
+                  <span id="live-telemetry-text" style="font-weight: 600; color: var(--mock-accent-blue);">⚡ Local (0 tokens)</span>
+                </div>
+                <span class="mock-gear-btn" title="Cài đặt">⚙️</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main View -->
+          <div class="mock-main-view">
+            <div class="mock-view-header">
+              <div class="mock-view-title-group">
+                <span class="mock-view-title" id="live-view-title">Open tabs</span>
+                <span class="mock-view-sub" id="live-view-sub">
+                  4 domains <span class="mock-local-badge-subtle">⚡ 0ms Local</span>
+                </span>
+              </div>
+              <button type="button" class="mock-close-all-btn">✕ Close all 5 tabs</button>
+            </div>
+
+            <!-- Tags Bar (chỉ hiện khi ở perspective AI) -->
+            <div id="live-tags-bar" style="display: none; gap: 0.4rem; flex-wrap: wrap;">
+              <span class="mock-pill" style="border-color: var(--mock-accent-purple); color: var(--mock-accent-purple);">
+                <span class="mock-pill-dot" style="background: var(--mock-accent-purple);"></span>
+                AI &amp; ML (2)
+              </span>
+              <span class="mock-pill" style="border-color: #10b981; color: #10b981;">
+                <span class="mock-pill-dot" style="background: #10b981;"></span>
+                Lập trình (1)
+              </span>
+              <span class="mock-pill" style="border-color: #3b82f6; color: #3b82f6;">
+                <span class="mock-pill-dot" style="background: #3b82f6;"></span>
+                Mạng xã hội (2)
+              </span>
+            </div>
+
+            <!-- Cards -->
+            <div class="mock-cards-layout" id="live-cards-container">
+              <div class="mock-m-card">
+                <div class="mock-m-head"><span id="card-1-title">Homepages</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                <div class="mock-chip"><span class="mock-chip-title">x.com/home</span><span>✕</span></div>
+              </div>
+              <div class="mock-m-card">
+                <div class="mock-m-head"><span id="card-2-title">YouTube</span> <span style="color:var(--mock-text-ter)">2 tabs</span></div>
+                <div class="mock-chip"><span class="mock-chip-title">One More Drink?</span><span>✕</span></div>
+                <div class="mock-chip"><span class="mock-chip-title">Phẫu thuật thẩm mỹ...</span><span>✕</span></div>
+              </div>
+              <div class="mock-m-card">
+                <div class="mock-m-head"><span id="card-3-title">Facebook</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                <div class="mock-chip"><span class="mock-chip-title">Facebook Home</span><span>✕</span></div>
+              </div>
+              <div class="mock-m-card">
+                <div class="mock-m-head"><span id="card-4-title">ChatGPT</span> <span style="color:var(--mock-text-ter)">1 tab</span></div>
+                <div class="mock-chip"><span class="mock-chip-title">ChatGPT</span><span>✕</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <!-- =================================================================
+         TAB 2: GIẢI THÍCH CHI TIẾT (4 TẦNG ZOOM-IN 2 CỘT)
+         ================================================================= -->
+    <section id="tab-explain" class="tab-pane" role="tabpanel" style="display: none;">
+
+      <!-- TẦNG 1: VĨ MÔ & CẤU TRÚC THƯ MỤC -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 1/4 • VĨ MÔ</div>
+            <h3>📁 1. Phạm Vi Kiến Trúc &amp; File Sở Hữu</h3>
+            <p>Giải pháp chỉ tác động trực tiếp vào tầng UI rendering và telemetry của extension. Không đụng chạm vào core phân loại hay làm phát sinh dependency mới.</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag green">UI Context</span>
+              <span class="meta-tag blue">Zero Dependency</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <div class="code-dots">
+                  <span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span>
+                </div>
+                <div class="file-dropdown-wrapper">
+                  <button class="file-dropdown-trigger" type="button">
+                    <span>📁 extension/</span>
+                  </button>
+                </div>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot structure"></span> STRUCTURE</span>
+              </div>
+            </div>
+
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tg">├── </span>📁 <span class="prop">extension</span>/</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="tg">├── </span>📄 <span class="prop">app.js</span>          <span class="c-comment"># Đồng bộ telemetry theo activePerspectiveId & icon sparkles</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="tg">├── </span>📄 <span class="prop">style.css</span>        <span class="c-comment"># Style cho dot local (blue/cyan) & badge AI subtle</span></span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="tg">└── </span>📄 <span class="prop">index.html</span>       <span class="c-comment"># Giữ nguyên cấu trúc markup semantic</span></span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TẦNG 2: THÀNH PHẦN GIAO DIỆN (COMPONENTS & VISUAL ELEMENTS) -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 2/4 • GIAO DIỆN</div>
+            <h3>🧩 2. Các Điểm Chạm Giao Diện (Touchpoints)</h3>
+            <p>Có 3 vị trí trên màn hình được bổ sung tín hiệu theo nguyên lý Vercel Impeccable:</p>
+            <ul style="font-size: 0.88rem; color: var(--text-sub); line-height: 1.6; margin-left: 1.25rem;">
+              <li><strong>1. Chân Sidebar (Telemetry):</strong> Đổi từ trạng thái cố định sang trạng thái động theo perspective.</li>
+              <li><strong>2. Rail Perspectives:</strong> Thêm icon <code>✦</code> nhỏ nhắn cho perspective AI.</li>
+              <li><strong>3. Header Subtitle:</strong> Gắn nhãn <code>⚡ 0ms Local</code> nhẹ nhàng bên cạnh số lượng domain.</li>
+            </ul>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot green"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 Touchpoints Breakdown</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot html"></span> HTML / CSS</span>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-comment">&lt;!-- 1. Chân Sidebar Telemetry --&gt;</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="punc">&lt;</span><span class="tag">span</span> <span class="attr">class</span>=<span class="str">"telemetry-dot local"</span><span class="punc">&gt;&lt;/</span><span class="tag">span</span><span class="punc">&gt;</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="punc">&lt;</span><span class="tag">span</span> <span class="attr">class</span>=<span class="str">"telemetry-label"</span><span class="punc">&gt;</span>⚡ Local (0 tokens)<span class="punc">&lt;/</span><span class="tag">span</span><span class="punc">&gt;</span></span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"></span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-comment">&lt;!-- 2. Perspective Item Icon --&gt;</span></span></div>
+              <div class="c-line del"><span class="c-sign">-</span><span class="c-text"><span class="punc">&lt;</span><span class="tag">span</span> <span class="attr">class</span>=<span class="str">"perspective-tab-name"</span><span class="punc">&gt;</span>Chủ đề<span class="punc">&lt;/</span><span class="tag">span</span><span class="punc">&gt;</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="punc">&lt;</span><span class="tag">span</span> <span class="attr">class</span>=<span class="str">"perspective-tab-name"</span><span class="punc">&gt;</span><span class="str">✦ Chủ đề</span><span class="punc">&lt;/</span><span class="tag">span</span><span class="punc">&gt;</span></span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"></span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-comment">&lt;!-- 3. Header Subtitle --&gt;</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="punc">&lt;</span><span class="tag">span</span> <span class="attr">class</span>=<span class="str">"section-count"</span><span class="punc">&gt;</span>4 domains · Local (0ms)<span class="punc">&lt;/</span><span class="tag">span</span><span class="punc">&gt;</span></span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TẦNG 3: FUNCTION CALL TREE & HOOK VÀO CODE -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 3/4 • CALL TREE</div>
+            <h3>🌲 3. Luồng Gọi Hàm (Runtime Call Tree)</h3>
+            <p>Hàm <code>updatePerspectiveTelemetry()</code> sẽ được gọi tự động mỗi khi render hoặc chuyển đổi perspective, đảm bảo telemetry luôn đồng bộ 100%.</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag yellow">State Reactive</span>
+              <span class="meta-tag green">Non-blocking</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot yellow"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 Call Flow in extension/app.js</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot flow"></span> FLOW</span>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="fn">switchPerspective</span>(<span class="prop">perspectiveId</span>)</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="tg">├── </span><span class="prop">activePerspectiveId</span> = <span class="prop">perspectiveId</span></span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="tg">├── </span><span class="fn">renderPerspectiveRail</span>()</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="tg">├── </span><span class="fn">renderStaticDashboard</span>()</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="tg">└── </span><span class="fn">updatePerspectiveTelemetry</span>()  <span class="c-comment"># Cập nhật dot & label dưới chân</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">        <span class="tg">├── </span><span class="kwd">if</span> (<span class="prop">activePerspectiveId</span> === <span class="str">'domain'</span>) <span class="fn">showLocalMode</span>()</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">        <span class="tg">└── </span><span class="kwd">else</span> <span class="fn">showAiMode</span>(<span class="prop">openRouterApiKey</span>)</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TẦNG 4: ALGORITHM & STATE LOGIC -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 4/4 • LOGIC</div>
+            <h3>⚙️ 4. Logic Xử Lý &amp; Trạng Thái (Pseudocode)</h3>
+            <p>Hàm xử lý cực kỳ gọn gàng (khoảng 15 dòng code), không đụng chạm vào logic ngầm hay gọi API thừa thãi.</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag green">Ponytail Minimal</span>
+              <span class="meta-tag blue">Safe</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot green"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 updatePerspectiveTelemetry()</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot js"></span> JS</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="kwd">function</span> <span class="fn">updatePerspectiveTelemetry</span>() {</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="kwd">const</span> <span class="prop">dot</span> = <span class="prop">document</span>.<span class="fn">querySelector</span>(<span class="str">'.telemetry-dot'</span>);</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="kwd">const</span> <span class="prop">label</span> = <span class="prop">document</span>.<span class="fn">querySelector</span>(<span class="str">'.telemetry-label'</span>);</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="kwd">const</span> <span class="prop">container</span> = <span class="prop">document</span>.<span class="fn">getElementById</span>(<span class="str">'telemetryAiStatus'</span>);</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="kwd">if</span> (!<span class="prop">dot</span> || !<span class="prop">label</span>) <span class="kwd">return</span>;</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="kwd">if</span> (<span class="prop">activePerspectiveId</span> === <span class="str">'domain'</span>) {</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="prop">dot</span>.<span class="prop">className</span> = <span class="str">'telemetry-dot local'</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="prop">label</span>.<span class="prop">textContent</span> = <span class="str">'⚡ Local (0 tokens)'</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="kwd">if</span> (<span class="prop">container</span>) <span class="prop">container</span>.<span class="prop">title</span> = <span class="str">'Gom nhóm theo hostname nội bộ — 0ms, không dùng AI'</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  } <span class="kwd">else</span> {</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="prop">dot</span>.<span class="prop">className</span> = <span class="str">'telemetry-dot ready'</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="prop">label</span>.<span class="prop">textContent</span> = <span class="prop">openRouterApiKey</span> ? <span class="str">'OpenRouter (Jev)'</span> : <span class="str">'Smart Local'</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="kwd">if</span> (<span class="prop">container</span>) <span class="prop">container</span>.<span class="prop">title</span> = <span class="str">'Phân loại ngữ nghĩa bằng AI'</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  }</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">}</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </section>
+  </div>
+
+  <!-- Nút Inspector Toggle Fixed -->
+  <button id="inspector-toggle" onclick="toggleDiff()">
+    <span>🔍 Check Diff</span>
+    <span id="diffStatusTag">[BẬT]</span>
+  </button>
+
+  <script src="./visual-core.js"></script>
+
+  <!-- Script tương tác riêng cho Demo Card 3 -->
+  <script>
+    function demoSwitchPerspective(type) {
+      const pDomain = document.getElementById('live-p-domain');
+      const pTopic = document.getElementById('live-p-topic');
+      const pPurpose = document.getElementById('live-p-purpose');
+      const btnDomain = document.getElementById('btn-select-domain');
+      const btnTopic = document.getElementById('btn-select-topic');
+      const dot = document.getElementById('live-telemetry-dot');
+      const text = document.getElementById('live-telemetry-text');
+      const activeName = document.getElementById('demo-active-name');
+      const viewTitle = document.getElementById('live-view-title');
+      const viewSub = document.getElementById('live-view-sub');
+      const tagsBar = document.getElementById('live-tags-bar');
+
+      const card1Title = document.getElementById('card-1-title');
+      const card2Title = document.getElementById('card-2-title');
+      const card3Title = document.getElementById('card-3-title');
+      const card4Title = document.getElementById('card-4-title');
+
+      pDomain.classList.remove('active');
+      pTopic.classList.remove('active');
+      pPurpose.classList.remove('active');
+      btnDomain.classList.remove('active');
+      btnTopic.classList.remove('active');
+
+      if (type === 'domain') {
+        pDomain.classList.add('active');
+        btnDomain.classList.add('active');
+        dot.className = 'mock-telemetry-dot blue';
+        text.textContent = '⚡ Local (0 tokens)';
+        text.style.color = 'var(--mock-accent-blue)';
+        activeName.innerHTML = '🌐 Domain (Local Engine)';
+        activeName.style.color = 'var(--mock-accent-blue)';
+        viewTitle.textContent = 'Open tabs';
+        viewSub.innerHTML = '4 domains <span class="mock-local-badge-subtle">⚡ 0ms Local</span>';
+        tagsBar.style.display = 'none';
+
+        card1Title.textContent = 'Homepages';
+        card2Title.textContent = 'YouTube';
+        card3Title.textContent = 'Facebook';
+        card4Title.textContent = 'ChatGPT';
+
+        showToast('⚡ Đã chuyển sang Perspective DOMAIN: Chạy 100% offline, 0ms, không tốn 1 token AI nào!', 'info', 2500);
+      } else {
+        const isTopic = type === 'topic';
+        const targetTab = isTopic ? pTopic : pPurpose;
+        targetTab.classList.add('active');
+        if (isTopic) btnTopic.classList.add('active');
+
+        dot.className = 'mock-telemetry-dot green';
+        text.textContent = 'OpenRouter (jev)';
+        text.style.color = '#ffffff';
+        activeName.innerHTML = isTopic ? '✦ Chủ đề (Bú AI OpenRouter)' : '✦ Mục đích (Bú AI OpenRouter)';
+        activeName.style.color = 'var(--mock-accent-purple)';
+        viewTitle.textContent = isTopic ? 'Chủ đề' : 'Mục đích';
+        viewSub.innerHTML = isTopic ? '3 categories · <span class="mock-ai-badge-subtle">✦ AI Classified</span>' : '2 categories · <span class="mock-ai-badge-subtle">✦ AI Classified</span>';
+        tagsBar.style.display = 'flex';
+
+        card1Title.textContent = 'Mạng xã hội';
+        card2Title.textContent = 'Giải trí / Media';
+        card3Title.textContent = 'Mạng xã hội';
+        card4Title.textContent = 'AI & Machine Learning';
+
+        showToast('✦ Đã chuyển sang ' + (isTopic ? 'CHỦ ĐỀ' : 'MỤC ĐÍCH') + ': Bật kết nối OpenRouter Jev để phân loại ngữ nghĩa!', 'success', 2500);
+      }
+    }
+  </script>
+</body>
+</html>

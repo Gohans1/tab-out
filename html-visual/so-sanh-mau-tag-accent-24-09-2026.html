@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bản Thiết Kế: So Sánh Màu Viền & Điểm Nhấn Tag Cho Tab Out</title>
+  <link rel="stylesheet" href="./visual-core.css">
+
+  <style>
+    /* CSS Tùy biến riêng cho Mockup Tab Out */
+    :root {
+      --mock-bg: #000000;
+      --mock-card: #0a0a0c;
+      --mock-card-border: #222226;
+      --mock-pill-bg: #141418;
+      --mock-text-pri: #ededed;
+      --mock-text-sec: #88888e;
+      --mock-text-ter: #55555c;
+      --tag-accent-cyan: #06b6d4;
+      --tag-accent-purple: #a855f7;
+      --tag-accent-emerald: #10b981;
+      --tag-accent-amber: #f59e0b;
+      --tag-accent-rose: #f43f5e;
+    }
+
+    .tabout-mockup-canvas {
+      background: #000000;
+      border: 1px solid #1f1f23;
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #ededed;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Subheader Pill Bar */
+    .mock-tags-bar {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .mock-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      height: 1.625rem;
+      padding: 0 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      background: #141418;
+      border: 1px solid #27272a;
+      color: #e4e4e7;
+      user-select: none;
+    }
+
+    .mock-pill-dot {
+      width: 0.45rem;
+      height: 0.45rem;
+      border-radius: 9999px;
+      flex-shrink: 0;
+    }
+
+    .mock-pill-count {
+      font-size: 0.6875rem;
+      font-family: monospace;
+      padding: 0 0.25rem;
+      border-radius: 9999px;
+      background: #000000;
+      color: #a1a1aa;
+      border: 1px solid #27272a;
+    }
+
+    /* Grid cards layout */
+    .mock-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+      gap: 1rem;
+      width: 100%;
+    }
+
+    .mock-card {
+      background: #09090b;
+      border-radius: 0.625rem;
+      padding: 0.875rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      position: relative;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+      min-width: 0;
+    }
+
+    /* Option 0: Hiện trạng cũ (Neutral nhạt nhòa) */
+    .mock-card.card-neutral {
+      border: 1px solid #27272a;
+    }
+
+    /* Option Ý tưởng Dev: Viền Full 4 cạnh rực màu (Neon) */
+    .mock-card.card-neon-full {
+      border: 2px solid var(--tag-accent-cyan);
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.25);
+    }
+
+    /* Option 1: Top Accent Line 2px (Khuyên dùng Vercel Style) */
+    .mock-card.card-top-accent {
+      border: 1px solid #27272a;
+      border-top: 2.5px solid var(--tag-accent-cyan);
+    }
+
+    /* Option 2: Tinted background 5% */
+    .mock-card.card-tinted {
+      background: color-mix(in srgb, var(--tag-accent-cyan) 6%, #09090b);
+      border: 1px solid color-mix(in srgb, var(--tag-accent-cyan) 25%, #27272a);
+    }
+
+    /* Header trong card */
+    .mock-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.375rem;
+      border-bottom: 1px solid #18181b;
+    }
+
+    .mock-card-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .mock-card-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #f4f4f5;
+    }
+
+    .mock-card-count {
+      font-size: 0.75rem;
+      color: #71717a;
+    }
+
+    /* List items trong card */
+    .mock-tab-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+    }
+
+    .mock-tab-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.375rem 0.5rem;
+      border-radius: 0.375rem;
+      background: #121215;
+      font-size: 0.8125rem;
+      color: #d4d4d8;
+      border: 1px solid transparent;
+    }
+
+    .mock-tab-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mock-tab-icon {
+      width: 1rem;
+      height: 1rem;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+    }
+
+    .mock-tab-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mock-tab-actions {
+      display: flex;
+      gap: 0.35rem;
+      color: #71717a;
+      flex-shrink: 0;
+    }
+
+    .mock-close-btn {
+      margin-top: 0.25rem;
+      background: transparent;
+      border: 1px solid #27272a;
+      border-radius: 0.375rem;
+      color: #a1a1aa;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      width: fit-content;
+    }
+
+    .interactive-palette-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: #141418;
+      border: 1px solid #27272a;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .palette-btn {
+      width: 1.75rem;
+      height: 1.75rem;
+      border-radius: 9999px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .palette-btn:hover {
+      transform: scale(1.15);
+    }
+    .palette-btn.active {
+      border-color: #ffffff;
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. STICKY TOPBAR -->
+  <header class="nav-header">
+    <div class="brand-title"><span>🎨</span> TAB OUT: SO SÁNH VISUAL ĐIỂM NHẤN MÀU TAG</div>
+    <nav class="tab-group" role="tablist">
+      <button class="tab-btn active" role="tab" aria-selected="true" onclick="switchTab('summarize', this)">📌 Tóm Lược &amp; So Sánh</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('explain', this)">🔍 Mổ Xẻ Kỹ Thuật (Zoom-In)</button>
+    </nav>
+  </header>
+
+  <div class="container">
+    <!-- =================================================================
+         TAB 1: TÓM LƯỢC & SO SÁNH TRỰC QUAN
+         ================================================================= -->
+    <main id="tab-summarize" class="tab-pane active" role="tabpanel">
+      <section class="callout">
+        <h2>🗣️ TÓM LƯỢC &amp; Ý CHÍNH 🗣️</h2>
+        <p>Tô kín 4 cạnh viền biến UI Vercel thành gánh xiếc hội chợ neon chói mắt; giải pháp đẳng cấp nhất là chỉ bú 1 đường viền mép trên 2.5px (Top Accent Line) kết hợp chấm màu (Color Dot) và bảng màu chuẩn hóa 6 sắc độ.</p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">CARD 1: COMPARISON SLIDER (KÉO TRƯỢT SO SÁNH)</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Trái: Ý tưởng viền 4 cạnh full (Chói) | Phải: Top Accent 2.5px + Color Dot (Tinh tế)</span>
+        </div>
+        <div class="slider-viewport">
+          <!-- Layer Before: Viền full 4 cạnh neon -->
+          <div class="slider-layer slider-before">
+            <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 0.75rem; background: rgba(239, 68, 68, 0.05); border-radius: 0.5rem;">
+              <span class="mock-annotation red">Ý TƯỞNG CŨ: VIỀN FULL 4 CẠNH QUÁ CHÓI</span>
+              <div class="tabout-mockup-canvas">
+                <div class="mock-tags-bar">
+                  <div class="mock-pill" style="border-color: var(--tag-accent-cyan); color: var(--tag-accent-cyan);">
+                    <span>Công Nghệ &amp; AI</span> <span class="mock-pill-count">1</span>
+                  </div>
+                  <div class="mock-pill" style="opacity: 0.5;">
+                    <span>Khác</span> <span class="mock-pill-count">4</span>
+                  </div>
+                </div>
+
+                <div class="mock-cards-grid">
+                  <!-- Card Công nghệ viền full -->
+                  <div class="mock-card card-neon-full">
+                    <div class="mock-card-head">
+                      <div class="mock-card-title-wrap">
+                        <span class="mock-card-title" style="color: var(--tag-accent-cyan);">Công Nghệ &amp; AI</span>
+                        <span class="mock-card-count">1 tab open</span>
+                      </div>
+                    </div>
+                    <div class="mock-tab-list">
+                      <div class="mock-tab-item">
+                        <div class="mock-tab-left">
+                          <span class="mock-tab-icon">🤖</span>
+                          <span class="mock-tab-title">Chọn model Colab GPU</span>
+                        </div>
+                        <div class="mock-tab-actions"><span>🔖</span><span>✕</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Card Khác -->
+                  <div class="mock-card card-neutral">
+                    <div class="mock-card-head">
+                      <div class="mock-card-title-wrap">
+                        <span class="mock-card-title">Khác</span>
+                        <span class="mock-card-count">4 tabs open</span>
+                      </div>
+                    </div>
+                    <div class="mock-tab-list">
+                      <div class="mock-tab-item"><div class="mock-tab-left"><span class="mock-tab-icon" style="color:#1877f2">🌐</span><span class="mock-tab-title">Facebook</span></div><span>✕</span></div>
+                      <div class="mock-tab-item"><div class="mock-tab-left"><span class="mock-tab-icon" style="color:#ef4444">▶</span><span class="mock-tab-title">YouTube — 1940's Noir Jazz</span></div><span>✕</span></div>
+                    </div>
+                    <button class="mock-close-btn">✕ Close 4 tabs</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Layer After: Top Accent Line 2.5px + Color Dot -->
+          <div class="slider-layer slider-after">
+            <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 0.75rem; background: rgba(34, 197, 94, 0.05); border-radius: 0.5rem;">
+              <span class="mock-annotation green">GIẢI PHÁP MỚI: TOP ACCENT LINE 2.5PX + DOT</span>
+              <div class="tabout-mockup-canvas">
+                <div class="mock-tags-bar">
+                  <div class="mock-pill" style="border-color: rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.08);">
+                    <span class="mock-pill-dot" style="background: var(--tag-accent-cyan);"></span>
+                    <span style="font-weight: 500; color: #fff;">Công Nghệ &amp; AI</span>
+                    <span class="mock-pill-count">1</span>
+                  </div>
+                  <div class="mock-pill" style="opacity: 0.55;">
+                    <span class="mock-pill-dot" style="background: #71717a;"></span>
+                    <span>Khác</span>
+                    <span class="mock-pill-count">4</span>
+                  </div>
+                </div>
+
+                <div class="mock-cards-grid">
+                  <!-- Card Công nghệ Top Accent -->
+                  <div class="mock-card card-top-accent">
+                    <div class="mock-card-head">
+                      <div class="mock-card-title-wrap">
+                        <span class="mock-pill-dot" style="background: var(--tag-accent-cyan); width: 0.5rem; height: 0.5rem;"></span>
+                        <span class="mock-card-title">Công Nghệ &amp; AI</span>
+                        <span class="mock-card-count">1 tab open</span>
+                      </div>
+                    </div>
+                    <div class="mock-tab-list">
+                      <div class="mock-tab-item">
+                        <div class="mock-tab-left">
+                          <span class="mock-tab-icon">🤖</span>
+                          <span class="mock-tab-title">Chọn model Colab GPU</span>
+                        </div>
+                        <div class="mock-tab-actions"><span>🔖</span><span>✕</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Card Khác (Neutral Chìm Xuống Chuẩn Mực) -->
+                  <div class="mock-card card-neutral">
+                    <div class="mock-card-head">
+                      <div class="mock-card-title-wrap">
+                        <span class="mock-card-title" style="color: #a1a1aa;">Khác</span>
+                        <span class="mock-card-count">4 tabs open</span>
+                      </div>
+                    </div>
+                    <div class="mock-tab-list">
+                      <div class="mock-tab-item"><div class="mock-tab-left"><span class="mock-tab-icon" style="color:#1877f2">🌐</span><span class="mock-tab-title">Facebook</span></div><span>✕</span></div>
+                      <div class="mock-tab-item"><div class="mock-tab-left"><span class="mock-tab-icon" style="color:#ef4444">▶</span><span class="mock-tab-title">YouTube — 1940's Noir Jazz</span></div><span>✕</span></div>
+                    </div>
+                    <button class="mock-close-btn">✕ Close 4 tabs</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-divider">
+            <div class="slider-knob" role="slider" aria-label="So sánh Trước và Sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div>
+          </div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <!-- CARD 2: BEFORE ONLY -->
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar">
+          <span class="card-badge badge-red">CARD 2: BEFORE ONLY (CẢNH BÁO VIỀN FULL 4 CẠNH)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-red);">Nhược điểm chí mạng của Border bao quanh toàn bộ Card</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 1.5rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.04);">
+          <span class="mock-annotation red">HIỆU ỨNG GÁNH XIẾC NEON</span>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <span class="diff-tag del">- NHƯỢC ĐIỂM</span>
+            <span style="font-size: 0.95rem; font-weight: 700; color: var(--accent-red);">Viền 4 cạnh rực màu phá nát chất Vercel Monochrome</span>
+          </div>
+          <ul style="font-size: 0.88rem; color: var(--text-sub); line-height: 1.6; margin-left: 1.25rem;">
+            <li><strong>Quá nhiều chu vi phát sáng:</strong> Card to bọc viền 4 cạnh tạo ra diện tích màu cực lớn, đấm nhau với màu favicon của các trang web.</li>
+            <li><strong>Tranh chấp cấp độ thị giác (Visual Weight):</strong> Khi mở 4-5 nhóm tab cùng lúc, màn hình biến thành một đống khung đèn LED xanh đỏ tím vàng hỗn loạn.</li>
+            <li><strong>Nếu cho pick màu tự do:</strong> User chọn phải màu tối thì đéo thấy viền đâu, chọn màu neon thì lóa mắt.</li>
+          </ul>
+        </div>
+      </article>
+
+      <!-- CARD 3: AFTER ONLY (INTERACTIVE DEMO) -->
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar">
+          <span class="card-badge badge-green">CARD 3: AFTER ONLY (TƯƠNG TÁC THẬT: THỬ ĐỔI MÀU LIVE)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-green);">Bấm vào các nút màu bên dưới để xem Card phản hồi tức thì</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 1.5rem; border-radius: 0.5rem; background: rgba(34, 197, 94, 0.04);">
+          <span class="mock-annotation green">ĐẲNG CẤP VERCEL CRAFT</span>
+
+          <!-- Thanh chọn màu tương tác -->
+          <div class="interactive-palette-bar">
+            <span style="font-size: 0.8125rem; font-weight: 600; color: #fff;">Chọn màu thử nghiệm:</span>
+            <button type="button" class="palette-btn active" style="background: #06b6d4;" title="Cyan (Công nghệ)" onclick="changeDemoColor('#06b6d4', 'Cyan / Công nghệ', this)"></button>
+            <button type="button" class="palette-btn" style="background: #a855f7;" title="Purple (Sáng tạo / AI)" onclick="changeDemoColor('#a855f7', 'Purple / Sáng tạo', this)"></button>
+            <button type="button" class="palette-btn" style="background: #10b981;" title="Emerald (Tài chính / Dev)" onclick="changeDemoColor('#10b981', 'Emerald / Code', this)"></button>
+            <button type="button" class="palette-btn" style="background: #f59e0b;" title="Amber (Nghiên cứu / Docs)" onclick="changeDemoColor('#f59e0b', 'Amber / Research', this)"></button>
+            <button type="button" class="palette-btn" style="background: #f43f5e;" title="Rose (Giải trí / Urgent)" onclick="changeDemoColor('#f43f5e', 'Rose / Urgent', this)"></button>
+          </div>
+
+          <!-- Sandbox Live Preview -->
+          <div class="tabout-mockup-canvas" id="liveDemoCanvas">
+            <div class="mock-tags-bar">
+              <div class="mock-pill" id="demoPill" style="border-color: rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.08);">
+                <span class="mock-pill-dot" id="demoPillDot" style="background: #06b6d4;"></span>
+                <span style="font-weight: 600; color: #fff;">Công Nghệ &amp; AI</span>
+                <span class="mock-pill-count">1</span>
+              </div>
+              <div class="mock-pill" style="opacity: 0.55;">
+                <span class="mock-pill-dot" style="background: #71717a;"></span>
+                <span>Khác</span>
+                <span class="mock-pill-count">4</span>
+              </div>
+            </div>
+
+            <div class="mock-cards-grid">
+              <!-- Demo Card có Top Accent đổi theo màu -->
+              <div class="mock-card" id="demoCard" style="border: 1px solid #27272a; border-top: 2.5px solid #06b6d4;">
+                <div class="mock-card-head">
+                  <div class="mock-card-title-wrap">
+                    <span class="mock-pill-dot" id="demoCardDot" style="background: #06b6d4; width: 0.5rem; height: 0.5rem;"></span>
+                    <span class="mock-card-title" id="demoCardTitle">Công Nghệ &amp; AI</span>
+                    <span class="mock-card-count">1 tab open</span>
+                  </div>
+                </div>
+                <div class="mock-tab-list">
+                  <div class="mock-tab-item">
+                    <div class="mock-tab-left">
+                      <span class="mock-tab-icon">🤖</span>
+                      <span class="mock-tab-title">Chọn model Colab GPU</span>
+                    </div>
+                    <div class="mock-tab-actions"><span>🔖</span><span>✕</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Thẻ Khác luôn chìm -->
+              <div class="mock-card card-neutral">
+                <div class="mock-card-head">
+                  <div class="mock-card-title-wrap">
+                    <span class="mock-card-title" style="color: #a1a1aa;">Khác</span>
+                    <span class="mock-card-count">4 tabs open</span>
+                  </div>
+                </div>
+                <div class="mock-tab-list">
+                  <div class="mock-tab-item"><div class="mock-tab-left"><span class="mock-tab-icon" style="color:#1877f2">🌐</span><span class="mock-tab-title">Facebook</span></div><span>✕</span></div>
+                  <div class="mock-tab-item"><div class="mock-tab-left"><span class="mock-tab-icon" style="color:#ef4444">▶</span><span class="mock-tab-title">YouTube — 1940's Noir Jazz</span></div><span>✕</span></div>
+                </div>
+                <button class="mock-close-btn">✕ Close 4 tabs</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" class="tab-btn active" style="background: var(--accent-green); color: #000; font-weight: 700;" onclick="showToast('✅ Đã xác nhận: Top Accent 2.5px + Color Dot giữ trọn linh hồn Vercel!', 'success')">
+              ⚡ Bấm thử chốt phương án
+            </button>
+            <button type="button" class="tab-btn" style="border: 1px solid var(--border);" onclick="showToast('ℹ️ Gợi ý: Bảng màu Curated 6 màu giúp đồng bộ cả dark & light mode.', 'info')">
+              ℹ️ Xem thông tin màu
+            </button>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <!-- =================================================================
+         TAB 2: GIẢI THÍCH CHI TIẾT (ZOOM-IN PRINCIPLE)
+         ================================================================= -->
+    <section id="tab-explain" class="tab-pane" role="tabpanel" style="display: none;">
+      
+      <!-- TẦNG 1: TRẢI NGHIỆM THỊ GIÁC & NGUYÊN TẮC THIẾT KẾ -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 1/3 • NGUYÊN TẮC THỊ GIÁC</div>
+            <h3>👁️ 1. Tại Sao Top Accent Thắng Tuyệt Đối?</h3>
+            <p>Trong thiết kế Monochrome (Vercel, Linear, Raycast), màu sắc chỉ dc phép xuất hiện với tư cách là <strong>tín hiệu nhận diện thứ cấp (Accent Indicator)</strong>, tuyệt đối không dc chiếm sóng bề mặt.</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag green">Tối Giản</span>
+              <span class="meta-tag blue">Chuẩn Vercel</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot green"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 visual-comparison.txt</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot structure"></span> COMPARISON</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line del"><span class="c-sign">-</span><span class="c-text">❌ VIỀN 4 CẠNH: 4 chu vi viền sáng chói đập vào mắt người dùng.</span></div>
+              <div class="c-line del"><span class="c-sign">-</span><span class="c-text">❌ VIỀN 4 CẠNH: Tranh chấp tương phản với favicon tab (YouTube, FB).</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">✅ TOP ACCENT 2.5PX: Chỉ 1 đường kẻ mỏng 2.5px ở đỉnh card làm mốc.</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">✅ TOP ACCENT 2.5PX: Đồng bộ hoàn hảo với Chấm màu (Dot) ở Pill bar.</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">✅ THẺ "KHÁC": Giữ nguyên xám mờ để tự động chìm xuống.</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TẦNG 2: CẤU TRÚC DỮ LIỆU & BẢNG MÀU CHUẨN (CURATED PALETTE) -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 2/3 • DỮ LIỆU & BẢNG MÀU</div>
+            <h3>🎨 2. Curated Palette (Không Dùng Color Picker Tự Do)</h3>
+            <p>Để đảm bảo độ tương phản (WCAG AA) trên nền đen OLED, bố m đã tuyển chọn 6 màu pastel có độ sáng vừa vặn, không chói gắt:</p>
+            <nav class="tab-group sub-tabs" role="tablist">
+              <button class="tab-btn active" role="tab" aria-selected="true" onclick="switchTab('sub-palette-schema', this)">⚡ JSON Schema</button>
+              <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('sub-palette-css', this)">🎨 CSS Tokens</button>
+            </nav>
+            <div class="meta-tag-group">
+              <span class="meta-tag yellow">Accessibility</span>
+              <span class="meta-tag blue">WCAG AA</span>
+            </div>
+          </div>
+
+          <div style="min-width: 0; width: 100%;">
+            <!-- Sub-Pane 1: Schema -->
+            <div id="tab-sub-palette-schema" class="tab-pane active" data-tab-pane="sub-palette-schema" role="tabpanel">
+              <div class="code-container">
+                <div class="code-topbar">
+                  <div class="code-topbar-left">
+                    <span class="code-dot green"></span>
+                    <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 perspective-tag.types.ts</span>
+                  </div>
+                  <div class="code-actions">
+                    <span class="code-lang-badge"><span class="lang-dot ts"></span> TS</span>
+                    <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+                  </div>
+                </div>
+                <div class="code-body">
+                  <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="kwd">export interface</span> <span class="prop">PerspectiveTag</span> {</span></div>
+                  <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="prop">name</span>: <span class="kwd">string</span>;</span></div>
+                  <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="prop">description</span>?: <span class="kwd">string</span>;</span></div>
+                  <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="prop">color</span>?: <span class="str">'cyan'</span> | <span class="str">'purple'</span> | <span class="str">'emerald'</span> | <span class="str">'amber'</span> | <span class="str">'rose'</span> | <span class="str">'slate'</span>;</span><span class="c-comment"># Curated presets only</span></div>
+                  <div class="c-line"><span class="c-sign"></span><span class="c-text">}</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Pane 2: CSS Tokens -->
+            <div id="tab-sub-palette-css" class="tab-pane" data-tab-pane="sub-palette-css" role="tabpanel" style="display: none;">
+              <div class="code-container">
+                <div class="code-topbar">
+                  <div class="code-topbar-left">
+                    <span class="code-dot yellow"></span>
+                    <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 tag-accents.css</span>
+                  </div>
+                  <div class="code-actions">
+                    <span class="code-lang-badge"><span class="lang-dot css"></span> CSS</span>
+                    <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+                  </div>
+                </div>
+                <div class="code-body">
+                  <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="tag">.mission-card</span>[<span class="attr">data-tag-color</span>=<span class="str">"cyan"</span>] {</span></div>
+                  <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="prop">border-top</span>: <span class="num">2.5px</span> <span class="kwd">solid</span> <span class="str">#06b6d4</span>;</span></div>
+                  <div class="c-line add"><span class="c-sign">+</span><span class="c-text">}</span></div>
+                  <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="tag">.mission-card</span>[<span class="attr">data-tag-color</span>=<span class="str">"purple"</span>] {</span></div>
+                  <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="prop">border-top</span>: <span class="num">2.5px</span> <span class="kwd">solid</span> <span class="str">#a855f7</span>;</span></div>
+                  <div class="c-line add"><span class="c-sign">+</span><span class="c-text">}</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TẦNG 3: CÁCH TRIỂN KHAI TRONG MODAL EDIT TAG -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 3/3 • UX THAO TÁC CỦA DEV</div>
+            <h3>⚙️ 3. Thêm Bảng Chọn Màu Vào Modal Edit Tag</h3>
+            <p>Trong modal "Chỉnh sửa tags", mỗi dòng tag chỉ cần thêm 1 nút tròn nhỏ chọn màu (Color Pip Picker). Bấm vào xổ ra 6 chấm màu nhỏ gọn, không làm phình to dòng tag.</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag green">Tiện lợi</span>
+              <span class="meta-tag yellow">Không rườm rà</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot green"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 modal-tag-row.html</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot html"></span> HTML</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="punc">&lt;</span><span class="tag">div</span> <span class="attr">class</span>=<span class="str">"tag-row"</span><span class="punc">&gt;</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="punc">&lt;</span><span class="tag">button</span> <span class="attr">type</span>=<span class="str">"button"</span> <span class="attr">class</span>=<span class="str">"tag-color-swatch-btn"</span> <span class="attr">style</span>=<span class="str">"background: var(--tag-color)"</span><span class="punc">&gt;&lt;/</span><span class="tag">button</span><span class="punc">&gt;</span></span><span class="c-comment"># Nút chọn màu 16px</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="punc">&lt;</span><span class="tag">input</span> <span class="attr">class</span>=<span class="str">"tag-field-name"</span> <span class="attr">value</span>=<span class="str">"Công Nghệ &amp; AI"</span><span class="punc">&gt;</span></span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="punc">&lt;</span><span class="tag">input</span> <span class="attr">class</span>=<span class="str">"tag-field-desc"</span> <span class="attr">value</span>=<span class="str">"AI, lập trình..."</span><span class="punc">&gt;</span></span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="punc">&lt;/</span><span class="tag">div</span><span class="punc">&gt;</span></span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </section>
+  </div>
+
+  <!-- Nút Inspector Toggle Fixed -->
+  <button id="inspector-toggle" onclick="toggleDiff()">
+    <span>🔍 Check Diff</span>
+    <span id="diffStatusTag">[BẬT]</span>
+  </button>
+
+  <script src="./visual-core.js"></script>
+  <script>
+    function changeDemoColor(colorHex, label, btn) {
+      document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+
+      const card = document.getElementById('demoCard');
+      const dot = document.getElementById('demoCardDot');
+      const pill = document.getElementById('demoPill');
+      const pillDot = document.getElementById('demoPillDot');
+
+      if (card) {
+        card.style.borderTop = `2.5px solid ${colorHex}`;
+      }
+      if (dot) {
+        dot.style.background = colorHex;
+      }
+      if (pill) {
+        pill.style.borderColor = `${colorHex}66`;
+        pill.style.background = `${colorHex}14`;
+      }
+      if (pillDot) {
+        pillDot.style.background = colorHex;
+      }
+
+      showToast(`Đã chuyển sang màu ${label}`, 'info', 1500);
+    }
+  </script>
+</body>
+</html>

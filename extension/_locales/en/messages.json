@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "Tab Out",
+    "description": "The name of the extension."
+  },
+  "appDesc": {
+    "message": "Keep tabs on your tabs. New tab page that groups your open tabs by domain and lets you close them with style.",
+    "description": "The description of the extension."
+  }
+}

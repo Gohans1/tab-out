@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "Tab Out",
+    "description": "Tên tiện ích mở rộng."
+  },
+  "appDesc": {
+    "message": "Quản lý các thẻ trình duyệt gọn gàng. Trang tab mới gom nhóm các tab theo tên miền và đóng tab phong cách.",
+    "description": "Mô tả tiện ích mở rộng."
+  }
+}

@@ -1,0 +1,1637 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bản Thiết Kế: So Sánh Vị Trí Khu Vực & Chiến Lược Màu Sắc Cho 3-5 Recent Tabs</title>
+  <link rel="stylesheet" href="./visual-core.css">
+
+  <style>
+    /* ========================================================================
+       HỆ THỐNG CSS CUSTOM CHO MOCKUP COCKPIT TAB OUT & RECENT TABS
+       ======================================================================== */
+    :root {
+      --mock-bg: #000000;
+      --mock-surface: #0a0a0c;
+      --mock-surface-card: #0c0c0e;
+      --mock-border: #1f1f23;
+      --mock-border-subtle: #27272a;
+      --mock-text-pri: #ededed;
+      --mock-text-sec: #88888e;
+      --mock-text-muted: #52525b;
+      --mock-accent: #ffffff;
+      --mock-purple: #a855f7;
+      --mock-blue: #3b82f6;
+      --mock-green: #22c55e;
+      --mock-amber: #f59e0b;
+      --mock-red: #ef4444;
+    }
+
+    /* Khung giả lập cửa sổ Tab Out */
+    .mock-window {
+      background: #000000;
+      border: 1px solid #27272a;
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Geist Sans", sans-serif;
+      color: #ededed;
+      width: 100%;
+      box-sizing: border-box;
+      position: relative;
+      overflow: hidden;
+      min-height: 520px;
+    }
+
+    /* Mockup Header */
+    .mock-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 0.85rem;
+      border-bottom: 1px solid #141416;
+      margin-bottom: 0.85rem;
+    }
+
+    .mock-header-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.2;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mock-header-sub {
+      font-size: 0.72rem;
+      color: #71717a;
+      margin-top: 0.2rem;
+    }
+
+    .mock-header-meta {
+      font-size: 0.72rem;
+      color: #71717a;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mock-header-meta strong {
+      color: #e4e4e7;
+    }
+
+    /* Mockup Cockpit 3 cột */
+    .mock-cockpit {
+      display: grid;
+      grid-template-columns: 145px 1fr 190px;
+      gap: 1.15rem;
+      align-items: start;
+    }
+
+    /* Cột 1: Perspectives Rail */
+    .mock-rail-left {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-size: 0.72rem;
+    }
+
+    .mock-rail-title {
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #71717a;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.25rem;
+      font-weight: 600;
+    }
+
+    .mock-perspective-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.35rem 0.55rem;
+      border-radius: 0.35rem;
+      color: #a1a1aa;
+      border: 1px solid transparent;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .mock-perspective-item:hover {
+      background: #141416;
+      color: #ffffff;
+    }
+
+    .mock-perspective-item.active {
+      color: #ffffff;
+      border-color: rgba(168, 85, 247, 0.4);
+      background: rgba(168, 85, 247, 0.08);
+      font-weight: 600;
+    }
+
+    .mock-rail-new-btn {
+      margin-top: 0.4rem;
+      padding: 0.35rem 0.55rem;
+      border: 1px dashed #27272a;
+      border-radius: 0.35rem;
+      color: #71717a;
+      font-size: 0.72rem;
+      text-align: center;
+    }
+
+    /* Cột 2: Center Board */
+    .mock-center-board {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .mock-board-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #18181b;
+    }
+
+    .mock-board-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .mock-board-actions {
+      display: flex;
+      gap: 0.35rem;
+    }
+
+    .mock-action-chip {
+      font-size: 0.6875rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.3rem;
+      border: 1px solid #27272a;
+      background: #0a0a0c;
+      color: #a1a1aa;
+    }
+
+    .mock-cards-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem;
+    }
+
+    .mock-card-box {
+      background: var(--mock-surface-card);
+      border: 1px solid #1f1f23;
+      border-radius: 0.5rem;
+      padding: 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+
+    .mock-card-header {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #d4d4d8;
+      display: flex;
+      justify-content: space-between;
+      padding-bottom: 0.3rem;
+      border-bottom: 1px solid #18181b;
+    }
+
+    .mock-tab-entry {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.3rem 0.45rem;
+      border-radius: 0.3rem;
+      background: #121215;
+      font-size: 0.72rem;
+      color: #d4d4d8;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+
+    .mock-tab-entry:hover {
+      background: #18181c;
+      color: #ffffff;
+    }
+
+    /* Cột 3: Saved Rail */
+    .mock-rail-right {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      font-size: 0.72rem;
+      border-left: 1px solid #18181b;
+      padding-left: 0.75rem;
+    }
+
+    .mock-saved-head {
+      font-weight: 600;
+      color: #d4d4d8;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .mock-saved-item {
+      padding: 0.45rem;
+      background: #0d0d10;
+      border: 1px solid #1f1f23;
+      border-radius: 0.35rem;
+      font-size: 0.7rem;
+      color: #a1a1aa;
+    }
+
+    /* =========================================================================
+       COMPONENTS PHỤC VỤ RECENT TABS (CÁC PHƯƠNG ÁN KHU VỰC)
+       ========================================================================= */
+
+    /* PHƯƠNG ÁN 1: TOP SHELF CỘT GIỮA (RECOMMENDED) */
+    .mock-recent-shelf {
+      background: #0a0a0d;
+      border: 1px solid #27272a;
+      border-radius: 0.55rem;
+      padding: 0.45rem 0.65rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      width: 100%;
+      box-sizing: border-box;
+      position: relative;
+    }
+
+    .mock-shelf-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #a1a1aa;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+      padding-right: 0.45rem;
+      border-right: 1px solid #222226;
+    }
+
+    .mock-shelf-tabs {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex: 1;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .mock-shelf-tabs::-webkit-scrollbar {
+      display: none;
+    }
+
+    .mock-recent-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.22rem 0.55rem;
+      border-radius: 0.375rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+      white-space: nowrap;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+
+    .mock-kbd-badge {
+      font-family: ui-monospace, SFMono-Regular, "Geist Mono", monospace;
+      font-size: 0.625rem;
+      padding: 0.08rem 0.3rem;
+      border-radius: 0.25rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    /* CHIẾN LƯỢC MÀU A: OPACITY DECAY (SUY GIẢM ĐỘ MỜ CHUẨN VERCEL) */
+    .decay-rank-1 {
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid #ffffff;
+      color: #ffffff;
+      font-weight: 600;
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+    }
+    .decay-rank-1 .mock-kbd-badge {
+      background: #ffffff;
+      color: #000000;
+    }
+
+    .decay-rank-2 {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      color: #f4f4f5;
+    }
+    .decay-rank-2 .mock-kbd-badge {
+      background: rgba(255, 255, 255, 0.25);
+      color: #ffffff;
+    }
+
+    .decay-rank-3 {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #d4d4d8;
+    }
+    .decay-rank-3 .mock-kbd-badge {
+      background: rgba(255, 255, 255, 0.15);
+      color: #d4d4d8;
+    }
+
+    .decay-rank-4 {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #a1a1aa;
+    }
+    .decay-rank-4 .mock-kbd-badge {
+      background: rgba(255, 255, 255, 0.08);
+      color: #a1a1aa;
+    }
+
+    .decay-rank-5 {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #71717a;
+    }
+    .decay-rank-5 .mock-kbd-badge {
+      background: rgba(255, 255, 255, 0.05);
+      color: #71717a;
+    }
+
+    /* CHIẾN LƯỢC MÀU B: MONO TABULAR INDEX (ĐƠN SẮC KHÔNG MÀU) */
+    .mono-rank {
+      background: #141417;
+      border: 1px solid #2c2c32;
+      color: #d4d4d8;
+    }
+    .mono-rank:hover {
+      background: #1c1c22;
+      color: #ffffff;
+      border-color: #3f3f46;
+    }
+    .mono-rank.is-top {
+      border-color: #52525b;
+      color: #ffffff;
+      background: #18181d;
+    }
+    .mono-rank .mock-kbd-badge {
+      background: #27272a;
+      color: #a1a1aa;
+      border: 1px solid #3f3f46;
+    }
+    .mono-rank.is-top .mock-kbd-badge {
+      background: #e4e4e7;
+      color: #000000;
+      border-color: #ffffff;
+    }
+
+    /* CHIẾN LƯỢC MÀU C: RAINBOW CHAOS (RẠP XIẾC CẦU VỒNG - ANTI PATTERN) */
+    .rainbow-rank-1 { background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; }
+    .rainbow-rank-2 { background: rgba(234, 179, 8, 0.15); border: 1px solid #eab308; color: #fef08a; }
+    .rainbow-rank-3 { background: rgba(34, 197, 94, 0.15); border: 1px solid #22c55e; color: #86efac; }
+    .rainbow-rank-4 { background: rgba(59, 130, 246, 0.15); border: 1px solid #3b82f6; color: #93c5fd; }
+    .rainbow-rank-5 { background: rgba(168, 85, 247, 0.15); border: 1px solid #a855f7; color: #d8b4fe; }
+
+    /* PHƯƠNG ÁN 2: HERO CARD ĐẦU TIÊN TRONG GRID */
+    .mock-hero-card {
+      background: #0f0f13;
+      border: 1px solid #3f3f46;
+      border-radius: 0.5rem;
+      padding: 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      position: relative;
+    }
+
+    .mock-hero-card-header {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid #27272a;
+    }
+
+    /* HIGHLIGHT Ở CARD PHÍA DƯỚI: BADGE & DOT */
+    .tab-badge-subtle {
+      font-size: 0.6rem;
+      font-weight: 600;
+      padding: 0.05rem 0.3rem;
+      border-radius: 0.2rem;
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      margin-left: 0.35rem;
+    }
+
+    .tab-dot-last-active {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+      display: inline-block;
+      margin-right: 0.35rem;
+    }
+
+    /* MINI CARD DƯỚI OPENROUTER JEV TRONG SIDEBAR */
+    .mock-rail-sidebar-card {
+      background: #0c0c0e;
+      border: 1px solid #27272a;
+      border-radius: 0.5rem;
+      padding: 0.45rem;
+      margin-top: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .mock-rail-sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.1rem 0.25rem 0.35rem;
+      border-bottom: 1px solid #1a1a1e;
+      margin-bottom: 0.25rem;
+    }
+
+    .mock-rail-sidebar-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #71717a;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .mock-rail-sidebar-badge {
+      font-size: 0.6rem;
+      font-family: ui-monospace, monospace;
+      color: #52525b;
+      padding: 0.05rem 0.25rem;
+      border-radius: 0.2rem;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .mock-rail-card-item {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.25rem 0.35rem;
+      border-radius: 0.3rem;
+      background: transparent;
+      border: 1px solid transparent;
+      cursor: pointer;
+      text-align: left;
+      font-size: 0.6875rem;
+      color: #d4d4d8;
+      transition: all 0.15s ease;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .mock-rail-card-item:hover {
+      background: #18181d;
+      color: #ffffff;
+      border-color: #3f3f46;
+    }
+
+    .mock-rail-card-item-title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Interactive playground bar */
+    .interactive-control-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      background: #0d0d11;
+      border: 1px solid #27272a;
+      border-radius: 0.5rem;
+      padding: 0.65rem 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .interactive-tag-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. STICKY TOPBAR -->
+  <header class="nav-header">
+    <div class="brand-title"><span>⚡</span> BẢN THIẾT KẾ: KHU VỰC & MÀU SẮC 3-5 RECENT TABS</div>
+    <nav class="tab-group" role="tablist">
+      <button class="tab-btn active" role="tab" aria-selected="true" onclick="switchTab('variant-sidebar-card', this)">🔥 PA ĐÍCH THỰC: Mini Card Dưới Jev (Cột 1)</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('variant-shelf', this)">🌟 PA 1: Top Shelf Cột Giữa</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('variant-hero', this)">🃏 PA 2: Hero Card Đầu Grid</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('variant-rail', this)">🧭 PA 3: Rail Perspective Cột 1</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('color-strategies', this)">🎨 Đố Vui Màu Sắc: Opacity vs Cầu Vồng</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('lower-cards', this)">🧩 Báo Hiệu Dưới Card: Giữ Hay Bỏ?</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('matrix', this)">⚖️ Ma Trận Quyết Định</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('explain', this)">🔍 Mổ Xẻ Kỹ Thuật (Zoom-In 4 Tầng)</button>
+    </nav>
+  </header>
+
+  <div class="container">
+
+    <!-- =================================================================
+         TAB 0: PHƯƠNG ÁN ĐÍCH THỰC: MINI CARD DƯỚI OPENROUTER JEV (CỘT 1)
+         ================================================================= -->
+    <main id="tab-variant-sidebar-card" class="tab-pane active" role="tabpanel">
+      <section class="callout" style="max-width: 50rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(34, 197, 94, 0.5);">
+        <h2 style="color: var(--accent-green);">🔥 PHƯƠNG ÁN ĐÍCH THỰC: MINI CARD DƯỚI JEV TRONG SIDEBAR CỘT 1 🔥</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Ý tưởng đỉnh cao của dev: Nhét 1 <strong>Card nhỏ xinh</strong> ngay bên dưới <code>OpenRouter (Jev)</code> tận dụng triệt để khoảng trống của Cột 1 (210px), <strong>Cột 2 được giải phóng 100% diện tích sạch bong</strong>, áp dụng trọn vẹn <strong>Opacity Decay + Phím tắt [Esc], [1]-[5]</strong>!
+        </p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">CARD 1: COMPARISON SLIDER (KÉO TRƯỢT SO SÁNH Ý TƯỞNG CỦA DEV)</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Kéo thanh trượt để thấy Mini Card lấp đầy hoàn hảo khoảng trống Sidebar</span>
+        </div>
+        <div class="slider-viewport" style="min-height: 520px;">
+          <!-- Layer Before: Ảnh cũ của dev (khoảng trống dưới Jev) -->
+          <div class="slider-layer slider-before">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">5 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>5 open tabs</strong></div>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+                  <div class="mock-perspective-item">🌐 Domain <span style="color:#71717a">5</span></div>
+                  <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">5</span></div>
+                  <div class="mock-rail-new-btn">+ New perspective</div>
+                  <div style="margin-top: 0.5rem; font-size: 0.72rem; color: #a1a1aa; display: flex; align-items: center; gap: 0.35rem;">
+                    <span style="color: #22c55e;">●</span> OpenRouter (Jev)
+                  </div>
+                  <!-- DƯỚI JEV TRỐNG HUẾCH -->
+                  <div class="diff-highlight" data-diff="annotation" style="margin-top: 1rem; border: 1px dashed rgba(239,68,68,0.4); border-radius: 0.4rem; padding: 1.5rem 0.5rem; text-align: center; background: rgba(239,68,68,0.03);">
+                    <span class="mock-annotation red">KHOẢNG TRỐNG THỪA THÃI</span>
+                    <span style="font-size: 0.6875rem; color: #71717a;">(Chưa có nội dung, khoảng đen lãng phí)</span>
+                  </div>
+                </div>
+
+                <div class="mock-center-board">
+                  <!-- BANNER Ở CỘT 2 CHIẾM DIỆN TÍCH -->
+                  <div class="diff-highlight" data-diff="annotation" style="background: rgba(239,68,68,0.05); border: 1px dashed #ef4444; border-radius: 0.45rem; padding: 0.4rem 0.65rem; display: flex; align-items: center; justify-content: space-between;">
+                    <span class="mock-annotation red">BANNER CỘT 2: CHIẾM DIỆN TÍCH ĐỨNG</span>
+                    <div style="font-size: 0.75rem; display: flex; align-items: center; gap: 0.4rem;">
+                      <span style="color: #a1a1aa;">↩ Vừa xem</span>
+                      <span style="background: #18181b; padding: 0.1rem 0.4rem; border-radius: 0.25rem;">📘 Facebook</span>
+                      <span class="mock-kbd-badge" style="background:#fff; color:#000;">Esc</span>
+                    </div>
+                    <span style="color: #71717a;">✕</span>
+                  </div>
+                  <div style="font-size: 0.85rem; font-weight: 700; color: #fff; margin-top: 0.4rem;">Chủ đề &bull; 2 of 1 categories</div>
+                  <div class="mock-card-box">
+                    <div class="mock-card-header">&bull; Công Nghệ &amp; AI &bull; 3 tabs open</div>
+                    <div class="mock-tab-entry"><span>🐙 heygen-com/hyperframes / skills</span><span>✕</span></div>
+                    <div class="mock-tab-entry"><span>🤖 ChatGPT</span><span>✕</span></div>
+                    <div class="mock-tab-entry"><span>▶️ Claude Opus 5.5 is ridiculous</span><span>✕</span></div>
+                  </div>
+                </div>
+
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Layer After: Mini Card Đích Thực Dưới Jev -->
+          <div class="slider-layer slider-after">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">5 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>5 open tabs</strong></div>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+                  <div class="mock-perspective-item">🌐 Domain <span style="color:#71717a">5</span></div>
+                  <div class="mock-perspective-item active">🏷️ Chủ đề <span style="color:#a855f7">5</span></div>
+                  <div class="mock-rail-new-btn">+ New perspective</div>
+                  <div style="margin-top: 0.5rem; font-size: 0.72rem; color: #a1a1aa; display: flex; align-items: center; gap: 0.35rem;">
+                    <span style="color: #22c55e;">●</span> OpenRouter (Jev)
+                  </div>
+
+                  <!-- MINI CARD DƯỚI JEV -->
+                  <div class="mock-rail-sidebar-card diff-highlight" data-diff="annotation">
+                    <span class="mock-annotation green">MINI CARD 5 TABS XINH XẮN: OPACITY DECAY</span>
+                    <div class="mock-rail-sidebar-header">
+                      <span class="mock-rail-sidebar-title">⚡ GẦN ĐÂY</span>
+                      <span class="mock-rail-sidebar-badge">5</span>
+                    </div>
+                    <div class="mock-rail-card-item decay-rank-1">
+                      <span>🐦</span>
+                      <span class="mock-rail-card-item-title">x.com/home</span>
+                      <span class="mock-kbd-badge">Esc</span>
+                    </div>
+                    <div class="mock-rail-card-item decay-rank-2">
+                      <span>▶️</span>
+                      <span class="mock-rail-card-item-title">Anthropic Opus</span>
+                      <span class="mock-kbd-badge">2</span>
+                    </div>
+                    <div class="mock-rail-card-item decay-rank-3">
+                      <span>🤖</span>
+                      <span class="mock-rail-card-item-title">ChatGPT</span>
+                      <span class="mock-kbd-badge">3</span>
+                    </div>
+                    <div class="mock-rail-card-item decay-rank-4">
+                      <span>📘</span>
+                      <span class="mock-rail-card-item-title">Duy Cơm Reels</span>
+                      <span class="mock-kbd-badge">4</span>
+                    </div>
+                    <div class="mock-rail-card-item decay-rank-5">
+                      <span>🐙</span>
+                      <span class="mock-rail-card-item-title">GitHub tab-out</span>
+                      <span class="mock-kbd-badge">5</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mock-center-board">
+                  <!-- CỘT 2 HOÀN TOÀN SẠCH SẼ! -->
+                  <div class="diff-highlight" data-diff="annotation" style="margin-bottom: 0.35rem;">
+                    <span class="mock-annotation green">GIẢI PHÓNG CỘT 2: ĐÉO CÒN BANNER CHIẾM CHỖ</span>
+                    <div style="font-size: 0.88rem; font-weight: 700; color: #fff;">Chủ đề &bull; 2 of 1 categories</div>
+                  </div>
+                  <div class="mock-card-box">
+                    <div class="mock-card-header">&bull; Công Nghệ &amp; AI &bull; 3 tabs open</div>
+                    <div class="mock-tab-entry"><span>🐙 heygen-com/hyperframes / skills</span><span>✕</span></div>
+                    <div class="mock-tab-entry"><span>🤖 ChatGPT</span><span>✕</span></div>
+                    <div class="mock-tab-entry"><span>▶️ Claude Opus 5.5 is ridiculous</span><span>✕</span></div>
+                  </div>
+                </div>
+
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-divider"><div class="slider-knob" role="slider" aria-label="So sánh Trước và Sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <!-- CARD 2: BEFORE ONLY -->
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar">
+          <span class="card-badge badge-red">CARD 2: BEFORE ONLY (CŨ)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-red);">Cột 1 trống trải, Cột 2 bị banner đè tụt</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="padding: 1.5rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.04);">
+          <span class="mock-annotation red">BẤT CẬP</span>
+          <p style="font-size: 0.88rem; color: var(--text-sub); line-height: 1.6;">
+            Cột 1 (Sidebar 210px) sau khi hiển thị xong nút OpenRouter (Jev) thì còn lại một khoảng trống dọc rất lớn không dùng đến. Trong khi đó ở Cột 2, banner Quick Return lại chiếm mất chiều cao khiến danh mục card bị tụt xuống dưới.
+          </p>
+        </div>
+      </article>
+
+      <!-- CARD 3: AFTER ONLY (LIVE INTERACTIVE TEST) -->
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar">
+          <span class="card-badge badge-green">CARD 3: AFTER ONLY (TƯƠNG TÁC THẬT VỚI MINI CARD)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-green);">Bấm các tab bên dưới để test nhảy tab trực tiếp</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="padding: 1.5rem; border-radius: 0.5rem; background: rgba(34, 197, 94, 0.04);">
+          <span class="mock-annotation green">HOÀN THIỆN XUẤT SẮC</span>
+          <div style="font-size: 0.95rem; font-weight: 700; color: var(--accent-green); margin-bottom: 0.75rem;">
+            Mini Card Gọn Gàng Trong Cột 190px - Trọn Vẹn 5 Tabs
+          </div>
+
+          <!-- Interactive Sidebar Card Widget -->
+          <div style="max-width: 220px; background: #0c0c0e; border: 1px solid #27272a; border-radius: 0.5rem; padding: 0.5rem; margin-bottom: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 0.3rem; border-bottom: 1px solid #1f1f23; margin-bottom: 0.35rem;">
+              <span style="font-size: 0.6875rem; font-weight: 700; color: #a1a1aa;">⚡ GẦN ĐÂY</span>
+              <span style="font-size: 0.6rem; color: #52525b; font-family: monospace;">5 TABS</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+              <button type="button" class="mock-rail-card-item decay-rank-1" onclick="showToast('⚡ [Esc] Đã nhảy về Tab 1: x.com/home', 'success')">
+                <span>🐦</span>
+                <span class="mock-rail-card-item-title">x.com/home</span>
+                <span class="mock-kbd-badge">Esc</span>
+              </button>
+              <button type="button" class="mock-rail-card-item decay-rank-2" onclick="showToast('⚡ [2] Đã nhảy về Tab 2: Anthropic Opus', 'info')">
+                <span>▶️</span>
+                <span class="mock-rail-card-item-title">Anthropic Opus</span>
+                <span class="mock-kbd-badge">2</span>
+              </button>
+              <button type="button" class="mock-rail-card-item decay-rank-3" onclick="showToast('⚡ [3] Đã nhảy về Tab 3: ChatGPT', 'info')">
+                <span>🤖</span>
+                <span class="mock-rail-card-item-title">ChatGPT</span>
+                <span class="mock-kbd-badge">3</span>
+              </button>
+              <button type="button" class="mock-rail-card-item decay-rank-4" onclick="showToast('⚡ [4] Đã nhảy về Tab 4: Duy Cơm Reels', 'info')">
+                <span>📘</span>
+                <span class="mock-rail-card-item-title">Duy Cơm Reels</span>
+                <span class="mock-kbd-badge">4</span>
+              </button>
+              <button type="button" class="mock-rail-card-item decay-rank-5" onclick="showToast('⚡ [5] Đã nhảy về Tab 5: GitHub tab-out', 'info')">
+                <span>🐙</span>
+                <span class="mock-rail-card-item-title">GitHub tab-out</span>
+                <span class="mock-kbd-badge">5</span>
+              </button>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" class="tab-btn active" style="background: var(--accent-green); color: #000; font-weight: 700;" onclick="showToast('🚀 Đã triển khai xong vào Extension & Đỗ 138/138 tests!', 'success')">
+              ✅ Đã triển khai vào Code & Pass 138 Tests
+            </button>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <!-- =================================================================
+         TAB 1: PHƯƠNG ÁN 1: TOP SHELF CỘT GIỮA (LƯU LẠI ĐỂ SO SÁNH)
+         ================================================================= -->
+    <section id="tab-variant-shelf" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 48rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(34, 197, 94, 0.4);">
+        <h2 style="color: var(--accent-green);">🌟 PHƯƠNG ÁN 1: TOP SHELF NGANG CỘT GIỮA (LƯU LẠI THAM KHẢO) 🌟</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Ghim 1 thanh ngang mỏng <strong>Recent Shelf</strong> ngay trên đầu Cột 2: Mắt mở newtab là đập thẳng vào <strong>3-5 tab gần nhất</strong>, bấm phím tắt <strong>[Esc]</strong> hoặc <strong>[2]-[5]</strong> nhảy về ngay lập tức.
+        </p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">CARD 1: COMPARISON SLIDER (KÉO TRƯỢT SO SÁNH)</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Kéo thanh trượt để thấy sự tiện lợi vượt trội của Top Shelf so với banner 1 tab cũ</span>
+        </div>
+        <div class="slider-viewport" style="min-height: 520px;">
+          <!-- Layer Before: Banner cũ chỉ chứa 1 tab đơn độc -->
+          <div class="slider-layer slider-before">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">5 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>5 open tabs</strong></div>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+                  <div class="mock-perspective-item active">🌐 Domain <span style="color:#a855f7">5</span></div>
+                  <div class="mock-perspective-item">🏷️ Chủ đề <span style="color:#71717a">5</span></div>
+                  <div class="mock-rail-new-btn">+ New perspective</div>
+                </div>
+                <div class="mock-center-board">
+                  <!-- BANNER CŨ: CHỈ 1 TAB DUY NHẤT -->
+                  <div class="diff-highlight" data-diff="annotation" style="background: rgba(239,68,68,0.06); border: 1px dashed #ef4444; border-radius: 0.45rem; padding: 0.45rem 0.65rem; display: flex; align-items: center; justify-content: space-between;">
+                    <span class="mock-annotation red">HIỆN TẠI: CHỈ NHỚ ĐƯỢC ĐÚNG 1 TAB DUY NHẤT</span>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem;">
+                      <span style="color: #ffffff; font-weight: 600;">↩ Quay lại tab vừa mở:</span>
+                      <span style="background: #18181b; padding: 0.15rem 0.45rem; border-radius: 0.25rem; border: 1px solid #27272a;">🐦 x.com/home</span>
+                      <span class="mock-kbd-badge" style="background:#ffffff; color:#000000;">Esc</span>
+                    </div>
+                    <span style="color: #71717a; font-size: 0.7rem;">✕</span>
+                  </div>
+                  <div class="mock-cards-row">
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">x.com &bull; 1 tab open</div>
+                      <div class="mock-tab-entry" style="border-color: rgba(255,255,255,0.4); background: rgba(255,255,255,0.06);">
+                        <span>🐦 x.com/home <span class="tab-badge-subtle">Vừa mở</span></span>
+                        <span>✕</span>
+                      </div>
+                    </div>
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">youtube.com &bull; 1 tab open</div>
+                      <div class="mock-tab-entry"><span>▶️ Anthropic Fixed Opus</span><span>✕</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mock-rail-right">
+                  <div class="mock-saved-head">Saved for later <span style="color:#71717a">0</span></div>
+                  <div style="font-size: 0.7rem; color: #52525b; font-style: italic;">Chưa có tab lưu</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Layer After: Top Shelf 5 Recent Tabs với Opacity Decay -->
+          <div class="slider-layer slider-after">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div>
+                  <div class="mock-header-title">Active tabs</div>
+                  <div class="mock-header-sub">5 tabs across 1 window</div>
+                </div>
+                <div class="mock-header-meta">Thursday, September 24, 2026 &bull; <strong>5 open tabs</strong></div>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-rail-title"><span>PERSPECTIVES</span><span>+</span></div>
+                  <div class="mock-perspective-item active">🌐 Domain <span style="color:#a855f7">5</span></div>
+                  <div class="mock-perspective-item">🏷️ Chủ đề <span style="color:#71717a">5</span></div>
+                  <div class="mock-rail-new-btn">+ New perspective</div>
+                </div>
+                <div class="mock-center-board">
+                  <!-- TOP SHELF 5 TABS MỚI -->
+                  <div class="mock-recent-shelf diff-highlight" data-diff="annotation">
+                    <span class="mock-annotation green">ĐÃ TỐI ƯU: SHELF 5 RECENT TABS NGANG + PHÍM TẮT ĐƠN GIẢN</span>
+                    <div class="mock-shelf-label">⚡ GẦN ĐÂY</div>
+                    <div class="mock-shelf-tabs">
+                      <div class="mock-recent-chip decay-rank-1">
+                        <span class="mock-kbd-badge">Esc</span>
+                        <span>🐦 x.com/home</span>
+                      </div>
+                      <div class="mock-recent-chip decay-rank-2">
+                        <span class="mock-kbd-badge">2</span>
+                        <span>▶️ Anthropic Opus</span>
+                      </div>
+                      <div class="mock-recent-chip decay-rank-3">
+                        <span class="mock-kbd-badge">3</span>
+                        <span>🤖 ChatGPT</span>
+                      </div>
+                      <div class="mock-recent-chip decay-rank-4">
+                        <span class="mock-kbd-badge">4</span>
+                        <span>📘 Duy Cơm Reels</span>
+                      </div>
+                      <div class="mock-recent-chip decay-rank-5">
+                        <span class="mock-kbd-badge">5</span>
+                        <span>🐙 GitHub tab-out</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mock-cards-row">
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">x.com &bull; 1 tab open</div>
+                      <div class="mock-tab-entry">
+                        <span><span class="tab-dot-last-active"></span>🐦 x.com/home</span>
+                        <span>✕</span>
+                      </div>
+                    </div>
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">youtube.com &bull; 1 tab open</div>
+                      <div class="mock-tab-entry"><span>▶️ Anthropic Fixed Opus</span><span>✕</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mock-rail-right">
+                  <div class="mock-saved-head">Saved for later <span style="color:#71717a">0</span></div>
+                  <div style="font-size: 0.7rem; color: #52525b; font-style: italic;">Chưa có tab lưu</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-divider"><div class="slider-knob" role="slider" aria-label="So sánh Trước và Sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <!-- CARD 2: BEFORE ONLY -->
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar">
+          <span class="card-badge badge-red">CARD 2: BEFORE ONLY (HẠN CHẾ CỦA GIAO DIỆN HIỆN TẠI)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-red);">Chỉ nhớ được đúng 1 tab đơn độc</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 1.5rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.04);">
+          <span class="mock-annotation red">THIẾU SỰ LINH HOẠT</span>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <span class="diff-tag del">- HIỆN TẠI</span>
+            <span style="font-size: 0.95rem; font-weight: 700; color: var(--accent-red);">Chỉ có 1 banner đơn lẻ cho Tab #1</span>
+          </div>
+          <p style="font-size: 0.88rem; color: var(--text-sub); line-height: 1.6;">
+            Khi dev vừa lướt X, rồi qua YouTube nghe nhạc, rồi qua ChatGPT copy code, sau đó mở newtab -> Banner hiện tại chỉ hiển thị tab cuối cùng (ChatGPT). Nếu muốn quay lại tab YouTube hoặc X, dev lại phải đi mò trong các card danh mục bên dưới.
+          </p>
+        </div>
+      </article>
+
+      <!-- CARD 3: AFTER ONLY WITH LIVE BUTTONS -->
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar">
+          <span class="card-badge badge-green">CARD 3: AFTER ONLY (TƯƠNG TÁC THẬT VỚI TOP SHELF)</span>
+          <span style="font-size: 0.85rem; color: var(--accent-green);">Bấm thử các tab chips bên dưới để cảm nhận tốc độ</span>
+        </div>
+        <div class="diff-highlight" data-diff="annotation" style="position: relative; padding: 1.5rem; border-radius: 0.5rem; background: rgba(34, 197, 94, 0.04);">
+          <span class="mock-annotation green">TRẢI NGHIỆM TỐI THƯỢNG</span>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.85rem;">
+            <span class="diff-tag add">+ PHƯƠNG ÁN 1</span>
+            <span style="font-size: 0.95rem; font-weight: 700; color: var(--accent-green);">Top Shelf Đa Tab: Bấm chuột hoặc gõ số là bay về ngay</span>
+          </div>
+
+          <!-- Interactive Shelf Demo -->
+          <div style="background: #0a0a0d; border: 1px solid #27272a; border-radius: 0.55rem; padding: 0.65rem 0.85rem; margin-bottom: 1.25rem;">
+            <div style="font-size: 0.72rem; color: #71717a; margin-bottom: 0.5rem; display: flex; justify-content: space-between;">
+              <span>SHELF INTERACTIVE PREVIEW (5 RECENT TABS):</span>
+              <span style="color: #22c55e;">● Live Clickable</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button type="button" class="mock-recent-chip decay-rank-1" onclick="showToast('⚡ [Esc] Đã nhảy về Tab 1: x.com/home (Tab vừa mở gần nhất)', 'success')">
+                <span class="mock-kbd-badge">Esc</span>
+                <span>🐦 x.com/home</span>
+              </button>
+              <button type="button" class="mock-recent-chip decay-rank-2" onclick="showToast('⚡ [2] Đã nhảy về Tab 2: YouTube - Anthropic Opus', 'info')">
+                <span class="mock-kbd-badge">2</span>
+                <span>▶️ Anthropic Opus</span>
+              </button>
+              <button type="button" class="mock-recent-chip decay-rank-3" onclick="showToast('⚡ [3] Đã nhảy về Tab 3: ChatGPT - OpenAI', 'info')">
+                <span class="mock-kbd-badge">3</span>
+                <span>🤖 ChatGPT</span>
+              </button>
+              <button type="button" class="mock-recent-chip decay-rank-4" onclick="showToast('⚡ [4] Đã nhảy về Tab 4: Facebook - Duy Cơm Reels', 'info')">
+                <span class="mock-kbd-badge">4</span>
+                <span>📘 Duy Cơm Reels</span>
+              </button>
+              <button type="button" class="mock-recent-chip decay-rank-5" onclick="showToast('⚡ [5] Đã nhảy về Tab 5: GitHub - Gohans1/tab-out', 'info')">
+                <span class="mock-kbd-badge">5</span>
+                <span>🐙 GitHub tab-out</span>
+              </button>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <button type="button" class="tab-btn active" style="background: var(--accent-green); color: #000000; font-weight: 700;" onclick="showToast('✅ Đánh giá PA 1: Đạt 10/10 điểm tiện dụng và thẩm mỹ Vercel!', 'success')">
+              🌟 Xác nhận chọn Phương Án 1
+            </button>
+            <button type="button" class="tab-btn" style="border: 1px solid var(--border);" onclick="switchTab('color-strategies')">
+              🎨 Xem tiếp bài toán phối màu (Tab 4)
+            </button>
+          </div>
+        </div>
+      </article>
+    </main>
+
+    <!-- =================================================================
+         TAB 2: PHƯƠNG ÁN 2: HERO CARD ĐẦU TIÊN TRONG GRID
+         ================================================================= -->
+    <section id="tab-variant-hero" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 48rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(234, 179, 8, 0.4);">
+        <h2 style="color: var(--accent-yellow);">🃏 PHƯƠNG ÁN 2: HERO CARD ĐẦU TIÊN TRONG GRID CỘT 2 🃏</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Biến khu Recent thành <strong>1 Card lớn nổi bật</strong> nằm ở vị trí đầu tiên của Grid 2 cột: Tận dụng form factor card có sẵn, nhưng <strong>chiếm mất 1 slot hiển thị và đẩy các danh mục khác xuống dưới</strong>.
+        </p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">CARD 1: COMPARISON SLIDER (HERO CARD TRONG GRID)</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Kéo thanh trượt để so sánh Card Grid bình thường vs Hero Card</span>
+        </div>
+        <div class="slider-viewport" style="min-height: 520px;">
+          <!-- Layer Before: Grid bình thường -->
+          <div class="slider-layer slider-before">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div><div class="mock-header-title">Active tabs</div></div>
+                <div class="mock-header-meta"><strong>5 open tabs</strong></div>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-perspective-item active">🌐 Domain <span style="color:#a855f7">5</span></div>
+                </div>
+                <div class="mock-center-board">
+                  <div class="mock-cards-row">
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">x.com &bull; 1 tab open</div>
+                      <div class="mock-tab-entry"><span>🐦 x.com/home</span><span>✕</span></div>
+                    </div>
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">youtube.com &bull; 1 tab open</div>
+                      <div class="mock-tab-entry"><span>▶️ Anthropic Opus</span><span>✕</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Layer After: Hero Card ở vị trí số 1 -->
+          <div class="slider-layer slider-after">
+            <div class="mock-window">
+              <div class="mock-header">
+                <div><div class="mock-header-title">Active tabs</div></div>
+                <div class="mock-header-meta"><strong>5 open tabs</strong></div>
+              </div>
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-perspective-item active">🌐 Domain <span style="color:#a855f7">5</span></div>
+                </div>
+                <div class="mock-center-board">
+                  <div class="mock-cards-row diff-highlight" data-diff="annotation">
+                    <span class="mock-annotation yellow">HERO CARD ĐẦU TIÊN: CHIẾM 1 SLOT TRONG GRID</span>
+                    <!-- HERO CARD -->
+                    <div class="mock-hero-card">
+                      <div class="mock-hero-card-header">
+                        <span>⚡ 5 Tabs Vừa Mở Gần Đây</span>
+                        <span class="mock-kbd-badge" style="background:#ffffff; color:#000000;">Esc</span>
+                      </div>
+                      <div class="mock-tab-entry" style="border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.06);">
+                        <span>🐦 x.com/home</span>
+                        <span class="mock-kbd-badge">Esc</span>
+                      </div>
+                      <div class="mock-tab-entry"><span>▶️ Anthropic Opus</span><span class="mock-kbd-badge">2</span></div>
+                      <div class="mock-tab-entry"><span>🤖 ChatGPT</span><span class="mock-kbd-badge">3</span></div>
+                    </div>
+                    <!-- CARD KHÁC BỊ ĐẨY SANG PHẢI / XUỐNG DƯỚI -->
+                    <div class="mock-card-box">
+                      <div class="mock-card-header">x.com &bull; 1 tab open</div>
+                      <div class="mock-tab-entry"><span>🐦 x.com/home</span><span>✕</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-divider"><div class="slider-knob" role="slider" aria-label="So sánh" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <!-- CARD 2 & 3 -->
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar"><span class="card-badge badge-red">CARD 2: BEFORE ONLY</span></div>
+        <div class="diff-highlight" data-diff="annotation" style="padding: 1.5rem; background: rgba(239,68,68,0.04); border-radius: 0.5rem;">
+          <span class="mock-annotation red">NHƯỢC ĐIỂM</span>
+          <p style="font-size: 0.88rem; color: var(--text-sub);">
+            Nếu nhét thành Card đầu tiên: Khi user lọc theo Domain hay Chủ đề, Card "Recent" này là dữ liệu chéo (cross-cutting), nhìn sẽ bị lẫn lộn giữa "đây là một danh mục domain" hay "đây là danh sách tab vừa mở". Gây nhiễu phân loại thông tin (Information Architecture).
+          </p>
+        </div>
+      </article>
+
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar"><span class="card-badge badge-green">CARD 3: AFTER ONLY</span></div>
+        <div class="diff-highlight" data-diff="annotation" style="padding: 1.5rem; background: rgba(34,197,94,0.04); border-radius: 0.5rem;">
+          <span class="mock-annotation green">ĐIỂM CỘNG</span>
+          <p style="font-size: 0.88rem; color: var(--text-sub); margin-bottom: 1rem;">
+            Phù hợp nếu dev không muốn thêm bất kỳ thành phần thanh bar nào ở trên nóc mà muốn màn hình trông vuông vức toàn các ô card đồng nhất.
+          </p>
+          <button type="button" class="tab-btn" style="border: 1px solid var(--border);" onclick="showToast('ℹ️ PA 2: Điểm đánh giá 7/10 (hơi chiếm chỗ của domain card)', 'info')">
+            Xem đánh giá PA 2
+          </button>
+        </div>
+      </article>
+    </section>
+
+    <!-- =================================================================
+         TAB 3: PHƯƠNG ÁN 3: RAIL PERSPECTIVE CỘT 1
+         ================================================================= -->
+    <section id="tab-variant-rail" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 48rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(59, 130, 246, 0.4);">
+        <h2 style="color: var(--accent-blue);">🧭 PHƯƠNG ÁN 3: PERSPECTIVE ITEM TRONG CỘT 1 (SIDEBAR) 🧭</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Thêm mục <strong>"⏱️ Gần đây"</strong> vào Perspectives Rail bên trái: Giao diện cực sạch, nhưng <strong>phải bấm chuột vào mới xem được -> Đánh mất hoàn toàn tính năng "Quick Return" tức thì!</strong>
+        </p>
+      </section>
+
+      <!-- CARD 1: COMPARISON SLIDER -->
+      <article class="card-wrapper card-slider">
+        <div class="card-header-bar"><span class="card-badge badge-white">CARD 1: COMPARISON SLIDER</span></div>
+        <div class="slider-viewport" style="min-height: 500px;">
+          <div class="slider-layer slider-before">
+            <div class="mock-window">
+              <div class="mock-cockpit">
+                <div class="mock-rail-left">
+                  <div class="mock-perspective-item active">🌐 Domain <span style="color:#a855f7">5</span></div>
+                  <div class="mock-perspective-item">🏷️ Chủ đề <span style="color:#71717a">5</span></div>
+                </div>
+                <div class="mock-center-board">
+                  <div style="font-size: 0.8rem; color: #a1a1aa;">Hiển thị bình thường theo Domain</div>
+                </div>
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-layer slider-after">
+            <div class="mock-window">
+              <div class="mock-cockpit">
+                <div class="mock-rail-left diff-highlight" data-diff="annotation">
+                  <span class="mock-annotation blue">PERSPECTIVE MỚI: ⏱️ GẦN ĐÂY</span>
+                  <div class="mock-perspective-item">🌐 Domain <span style="color:#71717a">5</span></div>
+                  <div class="mock-perspective-item">🏷️ Chủ đề <span style="color:#71717a">5</span></div>
+                  <div class="mock-perspective-item active" style="border-color: rgba(59, 130, 246, 0.4); background: rgba(59, 130, 246, 0.1); color: #93c5fd;">
+                    ⏱️ Gần đây <span style="color:#3b82f6">5</span>
+                  </div>
+                </div>
+                <div class="mock-center-board">
+                  <div style="font-size: 0.8rem; color: #93c5fd; font-weight: 600;">Danh sách 5 tab sắp xếp theo thời gian xem gần nhất...</div>
+                </div>
+                <div class="mock-rail-right"><div class="mock-saved-head">Saved</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="slider-divider"><div class="slider-knob" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+          <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+        </div>
+      </article>
+
+      <article class="card-wrapper card-before">
+        <div class="card-header-bar"><span class="card-badge badge-red">CARD 2: BEFORE ONLY</span></div>
+        <div class="diff-highlight" data-diff="annotation" style="padding: 1.5rem; background: rgba(239,68,68,0.04); border-radius: 0.5rem;">
+          <span class="mock-annotation red">KILL TÍNH NĂNG QUICK RETURN</span>
+          <p style="font-size: 0.88rem; color: var(--text-sub);">
+            Người dùng mở newtab với mong muốn bấm 1 phát hoặc gõ phím bay về tab cũ ngay trong 0.2 giây. Nếu giấu vào Cột 1 Perspective, dev bắt buộc phải rê chuột sang trái bấm chọn perspective rồi mới thấy danh sách -> Tốn thêm 2 thao tác thừa!
+          </p>
+        </div>
+      </article>
+
+      <article class="card-wrapper card-after">
+        <div class="card-header-bar"><span class="card-badge badge-green">CARD 3: AFTER ONLY</span></div>
+        <div class="diff-highlight" data-diff="annotation" style="padding: 1.5rem; background: rgba(34,197,94,0.04); border-radius: 0.5rem;">
+          <span class="mock-annotation green">KẾT LUẬN PA 3</span>
+          <p style="font-size: 0.88rem; color: var(--text-sub); margin-bottom: 1rem;">
+            Chỉ nên coi đây là 1 Perspective phụ bổ trợ cho ai thích xem lịch sử, chứ <strong>KHÔNG THỂ thay thế vị trí Quick Return chính trên màn hình</strong>.
+          </p>
+          <button type="button" class="tab-btn" style="border: 1px solid var(--border);" onclick="showToast('⚠️ PA 3: Điểm đánh giá 4/10 cho Quick Return (quá nhiều thao tác)', 'error')">
+            Kiểm tra điểm PA 3
+          </button>
+        </div>
+      </article>
+    </section>
+
+    <!-- =================================================================
+         TAB 4: ĐỐ VUI MÀU SẮC (OPACITY DECAY VS CẦU VỒNG VS MONO)
+         ================================================================= -->
+    <section id="tab-color-strategies" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 52rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(168, 85, 247, 0.4);">
+        <h2 style="color: var(--accent-purple);">🎨 BÀI TOÁN PHỐI MÀU CHO 3-5 RECENT TABS 🎨</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Giải mã thắc mắc của dev: <em>"Không thể chỉ dùng 1 màu vì không phân biệt được thứ tự, nhưng cũng không thể dùng 5 màu vì biến thành rạp xiếc!"</em>
+          <br><strong>Giải pháp Vercel đỉnh cao: Độ mờ suy giảm theo thời gian (Recency Opacity Decay) hoặc Đánh số Mono!</strong>
+        </p>
+      </section>
+
+      <!-- LIVE COMPARISON CỦA 3 CHIẾN LƯỢC MÀU SẮC -->
+      <article class="card-wrapper" style="border-color: #27272a; margin-bottom: 2rem;">
+        <div class="card-header-bar">
+          <span class="card-badge badge-white">SO SÁNH TRỰC DIỆN 3 CHIẾN LƯỢC MÀU SẮC</span>
+          <span style="font-size: 0.85rem; color: var(--text-main);">Nhìn bằng mắt thường để thấy sự khác biệt về độ sang trọng</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem;">
+
+          <!-- CHIẾN LƯỢC A (RECOMMENDED) -->
+          <div class="diff-highlight" data-diff="annotation" style="background: rgba(34, 197, 94, 0.03); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 0.5rem; padding: 1.25rem;">
+            <span class="mock-annotation green">CHIẾN LƯỢC A (KHUYÊN DÙNG NHẤT): OPACITY DECAY - SUY GIẢM ĐỘ MỜ</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <span style="font-size: 0.9rem; font-weight: 700; color: #ffffff;">🌟 Cùng 1 gam màu trung tính, nhưng độ sáng mờ dần theo thời gian</span>
+              <span style="font-size: 0.75rem; color: #22c55e; font-weight: 600;">100% → 70% → 45% → 25% → 15%</span>
+            </div>
+            <p style="font-size: 0.8rem; color: #a1a1aa; margin-bottom: 0.85rem; line-height: 1.5;">
+              Tab #1 sáng chói nhất đập ngay vào mắt (kèm phím Esc), các tab tiếp theo mờ dần tự nhiên theo trực giác thời gian của não bộ. Đẹp hoàn mỹ, không gây nhức mắt, chuẩn phong cách Vercel.
+            </p>
+            <!-- Demo Chips -->
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <div class="mock-recent-chip decay-rank-1">
+                <span class="mock-kbd-badge">Esc</span>
+                <span>🐦 x.com/home (Vừa mở)</span>
+              </div>
+              <div class="mock-recent-chip decay-rank-2">
+                <span class="mock-kbd-badge">2</span>
+                <span>▶️ Anthropic Opus</span>
+              </div>
+              <div class="mock-recent-chip decay-rank-3">
+                <span class="mock-kbd-badge">3</span>
+                <span>🤖 ChatGPT</span>
+              </div>
+              <div class="mock-recent-chip decay-rank-4">
+                <span class="mock-kbd-badge">4</span>
+                <span>📘 Duy Cơm Reels</span>
+              </div>
+              <div class="mock-recent-chip decay-rank-5">
+                <span class="mock-kbd-badge">5</span>
+                <span>🐙 GitHub tab-out</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CHIẾN LƯỢC B: MONO TABULAR INDEX -->
+          <div class="diff-highlight" data-diff="annotation" style="background: rgba(59, 130, 246, 0.03); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 0.5rem; padding: 1.25rem;">
+            <span class="mock-annotation blue">CHIẾN LƯỢC B: MONO TABULAR INDEX (ĐƠN SẮC GEIST MONO)</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <span style="font-size: 0.9rem; font-weight: 700; color: #ffffff;">⚙️ Không màu mè, phân cấp 100% bằng số thứ tự phím tắt</span>
+              <span style="font-size: 0.75rem; color: #93c5fd; font-weight: 600;">Developer / Linear Aesthetic</span>
+            </div>
+            <p style="font-size: 0.8rem; color: #a1a1aa; margin-bottom: 0.85rem; line-height: 1.5;">
+              Màu nền các chip đồng nhất 100% dark, chỉ có badge số phím tắt nổi rõ. Tab #1 có badge số màu trắng nổi bật nhất, các tab 2-5 dùng badge xám. Cực kỳ gọn và kỹ thuật.
+            </p>
+            <!-- Demo Chips -->
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <div class="mock-recent-chip mono-rank is-top">
+                <span class="mock-kbd-badge">Esc</span>
+                <span>🐦 x.com/home</span>
+              </div>
+              <div class="mock-recent-chip mono-rank">
+                <span class="mock-kbd-badge">2</span>
+                <span>▶️ Anthropic Opus</span>
+              </div>
+              <div class="mock-recent-chip mono-rank">
+                <span class="mock-kbd-badge">3</span>
+                <span>🤖 ChatGPT</span>
+              </div>
+              <div class="mock-recent-chip mono-rank">
+                <span class="mock-kbd-badge">4</span>
+                <span>📘 Duy Cơm Reels</span>
+              </div>
+              <div class="mock-recent-chip mono-rank">
+                <span class="mock-kbd-badge">5</span>
+                <span>🐙 GitHub tab-out</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CHIẾN LƯỢC C: RAINBOW CHAOS (ANTI-PATTERN) -->
+          <div class="diff-highlight" data-diff="annotation" style="background: rgba(239, 68, 68, 0.05); border: 1px dashed rgba(239, 68, 68, 0.5); border-radius: 0.5rem; padding: 1.25rem;">
+            <span class="mock-annotation red">CHIẾN LƯỢC C (ANTI-PATTERN): RẠP XIẾC CẦU VỒNG 5 MÀU</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <span style="font-size: 0.9rem; font-weight: 700; color: var(--accent-red);">🎪 Đỏ - Vàng - Xanh Lá - Xanh Dương - Tím: Giao diện thành rạp xiếc</span>
+              <span style="font-size: 0.75rem; color: #ef4444; font-weight: 600;">CỰC KỲ LOẠN MẮT (NOISE)</span>
+            </div>
+            <p style="font-size: 0.8rem; color: #fca5a5; margin-bottom: 0.85rem; line-height: 1.5;">
+              Đây chính là nỗi lo của dev: mỗi tab 1 màu làm mắt bị phân tán, màu sắc đè bẹp cả màu tag của extension, nhìn rẻ tiền và thiếu tính chuyên nghiệp.
+            </p>
+            <!-- Demo Chips -->
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <div class="mock-recent-chip rainbow-rank-1">
+                <span class="mock-kbd-badge" style="background:#ef4444; color:#fff;">Esc</span>
+                <span>🐦 x.com/home</span>
+              </div>
+              <div class="mock-recent-chip rainbow-rank-2">
+                <span class="mock-kbd-badge" style="background:#eab308; color:#000;">2</span>
+                <span>▶️ Anthropic Opus</span>
+              </div>
+              <div class="mock-recent-chip rainbow-rank-3">
+                <span class="mock-kbd-badge" style="background:#22c55e; color:#000;">3</span>
+                <span>🤖 ChatGPT</span>
+              </div>
+              <div class="mock-recent-chip rainbow-rank-4">
+                <span class="mock-kbd-badge" style="background:#3b82f6; color:#fff;">4</span>
+                <span>📘 Duy Cơm Reels</span>
+              </div>
+              <div class="mock-recent-chip rainbow-rank-5">
+                <span class="mock-kbd-badge" style="background:#a855f7; color:#fff;">5</span>
+                <span>🐙 GitHub tab-out</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </article>
+
+      <div style="text-align: center;">
+        <button type="button" class="tab-btn active" style="background: var(--accent-green); color: #000000; font-weight: 700; padding: 0.6rem 1.5rem;" onclick="showToast('💡 Chốt: Áp dụng Chiến Lược A (Opacity Decay) là chuẩn chỉ nhất!', 'success')">
+          ✅ Đã hiểu: Chốt dùng Chiến Lược A (Opacity Decay)
+        </button>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         TAB 5: BÁO HIỆU DƯỚI CARD: GIỮ HAY BỎ?
+         ================================================================= -->
+    <section id="tab-lower-cards" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 52rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(34, 197, 94, 0.4);">
+        <h2 style="color: var(--accent-green);">🧩 BÁO HIỆU Ở CÁC CARD BÊN DƯỚI: NÊN GIỮ HAY BỎ? 🧩</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Trả lời thắc mắc: <em>"Có nên vẫn giữ 'màu' báo hiệu đó ở tab trong các card domain/chủ đề như hiện tại không?"</em>
+        </p>
+      </section>
+
+      <div class="side-by-side-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+
+        <!-- LỰA CHỌN 1: CLEAN GRID (KHUYÊN DÙNG) -->
+        <div class="side-card" style="border-color: rgba(34, 197, 94, 0.4);">
+          <div class="side-card-head">
+            <span style="font-weight: 700; color: #22c55e;">🌟 LỰA CHỌN 1: CHỈ ĐẶT DOT NHẸ CHO TAB #1 (KHUYÊN DÙNG)</span>
+            <span class="card-badge badge-green">TỐI ƯU</span>
+          </div>
+          <p style="font-size: 0.85rem; color: #a1a1aa; line-height: 1.5;">
+            Vì trên <strong>Recent Shelf</strong> đã có đầy đủ 5 tabs rồi, nên ở dưới các Card danh mục chỉ cần:
+            <br>• Tab #1 (gần nhất) có 1 chấm dot trắng tinh tế: <code>● x.com/home</code>
+            <br>• Các tab 2, 3, 4, 5 giữ nguyên màu xám bình thường, <strong>không bôi màu khắp nơi</strong>.
+            <br>👉 <strong>Ưu điểm:</strong> Giữ nguyên trật tự trực quan, không bị phân mảnh sự chú ý.
+          </p>
+          <div style="background: #09090b; border: 1px solid #1f1f23; border-radius: 0.5rem; padding: 0.75rem;">
+            <div style="font-size: 0.72rem; color: #71717a; margin-bottom: 0.4rem;">MÔ PHỎNG CARD PHÍA DƯỚI:</div>
+            <div class="mock-tab-entry" style="margin-bottom: 0.35rem; border: 1px solid rgba(255,255,255,0.25);">
+              <span><span class="tab-dot-last-active"></span>🐦 x.com/home <span class="tab-badge-subtle">Vừa mở</span></span>
+              <span>✕</span>
+            </div>
+            <div class="mock-tab-entry" style="margin-bottom: 0.35rem;">
+              <span>🤖 ChatGPT</span>
+              <span>✕</span>
+            </div>
+            <div class="mock-tab-entry">
+              <span>▶️ Anthropic Opus</span>
+              <span>✕</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- LỰA CHỌN 2: BÔI MÀU TOÀN BỘ 5 TABS Ở DƯỚI (ANTI-PATTERN) -->
+        <div class="side-card" style="border-color: rgba(239, 68, 68, 0.4);">
+          <div class="side-card-head">
+            <span style="font-weight: 700; color: var(--accent-red);">⚠️ LỰA CHỌN 2: BÔI MÀU CẢ 5 TABS Ở DƯỚI CARD</span>
+            <span class="card-badge badge-red">ANTI-PATTERN</span>
+          </div>
+          <p style="font-size: 0.85rem; color: #a1a1aa; line-height: 1.5;">
+            Nếu cả 5 tab ở các card bên dưới đều được viền sáng, gắn badge và bôi màu:
+            <br>• Cả trang web sẽ xuất hiện hàng chục đốm sáng lộn xộn.
+            <br>• Mắt không biết tập trung vào đâu, triệt tiêu tính chất nổi bật của Tab #1.
+            <br>👉 <strong>Nhược điểm:</strong> Quá thừa thãi (Redundant visual cues).
+          </p>
+          <div style="background: #09090b; border: 1px dashed rgba(239,68,68,0.4); border-radius: 0.5rem; padding: 0.75rem;">
+            <div style="font-size: 0.72rem; color: #ef4444; margin-bottom: 0.4rem;">CARD BỊ NHIỄU SÁNG:</div>
+            <div class="mock-tab-entry" style="margin-bottom: 0.35rem; border: 1px solid #ef4444; background: rgba(239,68,68,0.1);">
+              <span>🐦 x.com/home <span style="font-size:0.6rem; color:#ef4444;">[1]</span></span>
+              <span>✕</span>
+            </div>
+            <div class="mock-tab-entry" style="margin-bottom: 0.35rem; border: 1px solid #eab308; background: rgba(234,179,8,0.1);">
+              <span>🤖 ChatGPT <span style="font-size:0.6rem; color:#eab308;">[3]</span></span>
+              <span>✕</span>
+            </div>
+            <div class="mock-tab-entry" style="border: 1px solid #22c55e; background: rgba(34,197,94,0.1);">
+              <span>▶️ Anthropic Opus <span style="font-size:0.6rem; color:#22c55e;">[2]</span></span>
+              <span>✕</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="text-align: center;">
+        <button type="button" class="tab-btn active" style="background: var(--accent-green); color: #000000; font-weight: 700; padding: 0.6rem 1.5rem;" onclick="showToast('💡 Đề xuất chuẩn: Chỉ giữ Dot cho Tab #1 ở card dưới, 5 tab hiển thị trọn vẹn trên Shelf!', 'success')">
+          ✅ Duyệt Lựa Chọn 1: Dot tinh tế cho Tab #1
+        </button>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         TAB 6: MA TRẬN QUYẾT ĐỊNH
+         ================================================================= -->
+    <section id="tab-matrix" class="tab-pane" role="tabpanel" style="display: none;">
+      <section class="callout" style="max-width: 52rem; margin: 0 auto 2rem; text-align: center; border-color: rgba(255, 255, 255, 0.3);">
+        <h2>⚖️ MA TRẬN SO SÁNH & QUYẾT ĐỊNH TOÀN DIỆN ⚖️</h2>
+        <p style="font-size: 0.95rem; line-height: 1.6; color: var(--text-main);">
+          Tổng hợp tất cả các tiêu chí quan trọng để dev dễ dàng chốt phương án thi công.
+        </p>
+      </section>
+
+      <div style="overflow-x: auto; margin-bottom: 2rem;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; color: #ededed; background: #0a0a0c; border: 1px solid #27272a; border-radius: 0.5rem;">
+          <thead>
+            <tr style="border-bottom: 1px solid #27272a; background: #121215; text-align: left;">
+              <th style="padding: 0.85rem 1rem;">Tiêu Chí</th>
+              <th style="padding: 0.85rem 1rem; color: var(--accent-green);">🌟 PA 1: Top Shelf (Nóc Cột 2)</th>
+              <th style="padding: 0.85rem 1rem; color: var(--accent-yellow);">🃏 PA 2: Hero Card Đầu Grid</th>
+              <th style="padding: 0.85rem 1rem; color: var(--accent-blue);">🧭 PA 3: Rail Perspective</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid #1f1f23;">
+              <td style="padding: 0.75rem 1rem; font-weight: 600; color: #a1a1aa;">Tốc độ bấm quay lại</td>
+              <td style="padding: 0.75rem 1rem; color: #22c55e; font-weight: 700;">⚡ 0.1s (Đập ngay vào mắt + Esc)</td>
+              <td style="padding: 0.75rem 1rem; color: #eab308;">0.3s (Mắt phải đảo sang Card)</td>
+              <td style="padding: 0.75rem 1rem; color: #ef4444;">1.5s (Phải click Sidebar trước)</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #1f1f23;">
+              <td style="padding: 0.75rem 1rem; font-weight: 600; color: #a1a1aa;">Ảnh hưởng Cockpit 3 cột</td>
+              <td style="padding: 0.75rem 1rem; color: #22c55e;">✅ 0% (Nằm trọn trong Cột 2)</td>
+              <td style="padding: 0.75rem 1rem; color: #eab308;">⚠️ Đẩy 1 domain card xuống dưới</td>
+              <td style="padding: 0.75rem 1rem; color: #22c55e;">✅ Không ảnh hưởng</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #1f1f23;">
+              <td style="padding: 0.75rem 1rem; font-weight: 600; color: #a1a1aa;">Khả năng chứa 3-5 tabs</td>
+              <td style="padding: 0.75rem 1rem; color: #22c55e;">✅ Chiều ngang cực rộng, đủ 5 tabs</td>
+              <td style="padding: 0.75rem 1rem; color: #eab308;">⚠️ Khá chật nếu card chia 2 cột</td>
+              <td style="padding: 0.75rem 1rem; color: #22c55e;">✅ Hiển thị dạng list dọc</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #1f1f23;">
+              <td style="padding: 0.75rem 1rem; font-weight: 600; color: #a1a1aa;">Màu sắc tối ưu</td>
+              <td style="padding: 0.75rem 1rem; color: #22c55e; font-weight: 600;">Opacity Decay (Độ mờ suy giảm)</td>
+              <td style="padding: 0.75rem 1rem;">Mono List</td>
+              <td style="padding: 0.75rem 1rem;">Default List</td>
+            </tr>
+            <tr>
+              <td style="padding: 0.75rem 1rem; font-weight: 600; color: #a1a1aa;">Điểm đánh giá UX</td>
+              <td style="padding: 0.75rem 1rem; color: #22c55e; font-weight: 700; font-size: 1rem;">🏆 10 / 10</td>
+              <td style="padding: 0.75rem 1rem; color: #eab308; font-weight: 700;">7 / 10</td>
+              <td style="padding: 0.75rem 1rem; color: #ef4444; font-weight: 700;">4 / 10</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="background: rgba(34, 197, 94, 0.05); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 0.5rem; padding: 1.25rem; text-align: center;">
+        <h3 style="color: #22c55e; margin-bottom: 0.5rem;">🎯 KẾT LUẬN & ĐỀ XUẤT COMBO HOÀN HẢO CHO DEV:</h3>
+        <p style="font-size: 0.95rem; color: #ededed; line-height: 1.6; max-width: 42rem; margin: 0 auto;">
+          <strong>Combo Bất Bại:</strong> Vị trí <strong>Top Shelf (Cột 2)</strong> + Chiến lược màu <strong>Opacity Decay (suy giảm độ mờ)</strong> + Phím tắt số <strong>[Esc], [2]-[5]</strong> + Card dưới chỉ gắn <strong>dot nhẹ cho Tab #1</strong>.
+        </p>
+      </div>
+    </section>
+
+    <!-- =================================================================
+         TAB 7: MỔ XẺ KỸ THUẬT (ZOOM-IN 4 TẦNG)
+         ================================================================= -->
+    <section id="tab-explain" class="tab-pane" role="tabpanel" style="display: none;">
+
+      <!-- TẦNG 1: VĨ MÔ & CẤU TRÚC TẬP TIN -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 1/4 • VĨ MÔ</div>
+            <h3>📁 1. Cấu Trúc Tập Tin Chạm Đến</h3>
+            <p>Hệ thống Recent Tabs mở rộng từ 1 tab lên 3-5 tabs chỉ cần can thiệp cục bộ vào 3 file chính trong extension:</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag green">UI Shelf</span>
+              <span class="meta-tag blue">MRU Logic</span>
+              <span class="meta-tag purple">Geist CSS</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot green"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📁 extension/</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot structure"></span> STRUCTURE</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tg">├── </span>📄 <span class="prop">extension/index.html</span></span><span class="c-comment"># Nơi đặt container #quickReturnBar (Top Shelf)</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tg">├── </span>📄 <span class="prop">extension/app.js</span></span><span class="c-comment"># Logic getRecentTabs(limit: 5) + renderQuickReturnBar()</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tg">├── </span>📄 <span class="prop">extension/style.css</span></span><span class="c-comment"># CSS Opacity Decay variables (.decay-rank-1..5)</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tg">└── </span>📄 <span class="prop">test/perspectives.test.ts</span></span><span class="c-comment"># Test suite bảo đảm không regression</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TẦNG 2: COMPONENT & DATA FLOW -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 2/4 • COMPONENT & STATE</div>
+            <h3>🧩 2. Cấu Trúc Data & Hàm Render</h3>
+            <p>Hàm <code>getRecentTabs()</code> đã được thiết kế sẵn tham số <code>limit: 5</code>, chỉ cần cắm vào renderer Top Shelf:</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag green">Pure Data</span>
+              <span class="meta-tag blue">Fitts's Law</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot yellow"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 extension/app.js</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot js"></span> JS</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="kwd">function</span> <span class="fn">renderQuickReturnBar</span>(<span class="prop">tabs</span>) {</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="kwd">const</span> <span class="prop">recentTabs</span> = <span class="fn">getRecentTabs</span>(<span class="prop">tabs</span>, { <span class="prop">limit</span>: <span class="num">5</span> });</span><span class="c-comment"># Lấy tối đa 5 tab MRU</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="kwd">if</span> (!<span class="prop">recentTabs</span>.<span class="prop">length</span>) <span class="kwd">return</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="kwd">const</span> <span class="prop">chipsHtml</span> = <span class="prop">recentTabs</span>.<span class="fn">map</span>((<span class="prop">tab</span>, <span class="prop">idx</span>) =&gt; {</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="kwd">const</span> <span class="prop">kbd</span> = <span class="prop">idx</span> === <span class="num">0</span> ? <span class="str">'Esc'</span> : <span class="str">`</span>${<span class="prop">idx</span> + <span class="num">1</span>}<span class="str">`</span>;</span><span class="c-comment"># Phím tắt Esc hoặc số</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="kwd">return</span> <span class="str">`&lt;button class="recent-shelf-chip decay-rank-</span>${<span class="prop">idx</span> + <span class="num">1</span>}<span class="str">" data-tab-id="</span>${<span class="prop">tab</span>.<span class="prop">id</span>}<span class="str">"&gt;</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">      <span class="str">&lt;kbd&gt;</span>${<span class="prop">kbd</span>}<span class="str">&lt;/kbd&gt;</span> <span class="str">&lt;span&gt;</span>${<span class="prop">tab</span>.<span class="prop">title</span>}<span class="str">&lt;/span&gt;&lt;/button&gt;`</span>;</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">  }).<span class="fn">join</span>(<span class="str">''</span>);</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">}</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TẦNG 3: RUNTIME CALL TREE -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 3/4 • RUNTIME CALL TREE</div>
+            <h3>⚡ 3. Luồng Sự Kiện & Phím Tắt</h3>
+            <p>Xử lý phím tắt <code>Escape</code> cho tab đầu tiên và <code>Alt+1..5</code> hoặc phím số khi focus vào shelf:</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag yellow">Keyboard First</span>
+              <span class="meta-tag green">Zero Latency</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot blue"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 runtime-flow.txt</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot flow"></span> FLOW</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">onUserOpensNewTab()</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  ├── loadAllTabs()</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  ├── getRecentTabs(tabs, { limit: 5 })</span><span class="c-comment"># Sắp xếp theo lastAccessed giảm dần</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  ├── renderQuickReturnShelf()</span><span class="c-comment"># Ghim lên đầu Cột 2</span></div>
+              <div class="c-line"><span class="c-sign"></span><span class="c-text">  └── listenKeyboardShortcuts()</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">        ├── Key === 'Escape'  =&gt; focusTab(recentTabs[0].id)</span><span class="c-comment"># Về tab gần nhất</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text">        └── Key === '1'..'5'  =&gt; focusTab(recentTabs[key-1].id)</span><span class="c-comment"># Về tab tương ứng</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TẦNG 4: LOGIC THUẬT TOÁN CSS OPACITY DECAY -->
+      <section class="explain-section">
+        <div class="explain-layout">
+          <div class="explain-text-col">
+            <div class="zoom-tier-badge">TẦNG 4/4 • LOGIC MÀU SẮC</div>
+            <h3>🎨 4. Công Thức Opacity Decay</h3>
+            <p>Hàm toán học suy giảm độ mờ giúp mắt tự động nhận biết độ mới cũ mà không cần đến màu sắc sặc sỡ:</p>
+            <div class="meta-tag-group">
+              <span class="meta-tag purple">Math Curve</span>
+              <span class="meta-tag green">Geist Aesthetics</span>
+            </div>
+          </div>
+
+          <div class="code-container">
+            <div class="code-topbar">
+              <div class="code-topbar-left">
+                <span class="code-dot green"></span>
+                <span style="font-size: 0.78rem; font-weight: 700; color: #e4e4e7;">📄 extension/style.css</span>
+              </div>
+              <div class="code-actions">
+                <span class="code-lang-badge"><span class="lang-dot css"></span> CSS</span>
+                <button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button>
+              </div>
+            </div>
+            <div class="code-body">
+              <div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-comment">/* Công thức suy giảm độ sáng theo thứ hạng recency */</span></span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="tag">.decay-rank-1</span> { <span class="prop">border-color</span>: <span class="str">#ffffff</span>; <span class="prop">background</span>: <span class="fn">rgba</span>(<span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">0.14</span>); }</span><span class="c-comment"># 100% recency</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="tag">.decay-rank-2</span> { <span class="prop">border-color</span>: <span class="fn">rgba</span>(<span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">0.45</span>); <span class="prop">background</span>: <span class="fn">rgba</span>(<span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">0.08</span>); }</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="tag">.decay-rank-3</span> { <span class="prop">border-color</span>: <span class="fn">rgba</span>(<span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">0.25</span>); <span class="prop">background</span>: <span class="fn">rgba</span>(<span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">0.04</span>); }</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="tag">.decay-rank-4</span> { <span class="prop">border-color</span>: <span class="fn">rgba</span>(<span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">0.15</span>); <span class="prop">background</span>: <span class="fn">rgba</span>(<span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">0.02</span>); }</span></div>
+              <div class="c-line add"><span class="c-sign">+</span><span class="c-text"><span class="tag">.decay-rank-5</span> { <span class="prop">border-color</span>: <span class="fn">rgba</span>(<span class="num">255</span>, <span class="num">255</span>, <span class="num">0.08</span>); <span class="prop">background</span>: <span class="kwd">transparent</span>; }</span><span class="c-comment"># Cũ nhất</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </section>
+
+  </div>
+
+  <!-- Nút Inspector Toggle Fixed -->
+  <button id="inspector-toggle" onclick="toggleDiff()">
+    <span>🔍 Check Diff</span>
+    <span id="diffStatusTag">[BẬT]</span>
+  </button>
+
+  <script src="./visual-core.js"></script>
+</body>
+</html>
