@@ -1601,7 +1601,7 @@ const PERSPECTIVE_TEMPLATES = {
         { name: 'Khẩn cấp / Làm ngay', description: 'Việc gấp, sự cố production, form đang điền, tài liệu họp', color: 'rose' },
         { name: 'Quan trọng trong ngày', description: 'Công việc chính hôm nay, tài liệu đang soạn thảo, nghiên cứu dở', color: 'amber' },
         { name: 'Đọc sau / Backlog', description: 'Bài blog kỹ thuật, bài hướng dẫn, video tham khảo khi rảnh', color: 'blue' },
-        { name: 'Có thể đóng luôn', description: 'Kết quả tìm kiếm, tải xong, trang đăng nhập xong rác rưởi', color: 'cyan' },
+        { name: 'Có thể đóng luôn', description: 'Kết quả tìm kiếm, tải xong, trang tạm thời hoặc xác thực xong', color: 'cyan' },
         { name: 'Khác', description: '', color: '' }
       ]
     }
@@ -1717,6 +1717,10 @@ let aiAuthBlocked = false;
 let tabClassificationCache = {};
 let isPerspectivesLoaded = false;
 
+function isJevActive() {
+  return Boolean(openRouterApiKey && !aiAuthBlocked);
+}
+
 async function loadPerspectiveSettings(force = false) {
   if (isPerspectivesLoaded && !force) return;
   if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
@@ -1771,6 +1775,9 @@ async function loadPerspectiveSettings(force = false) {
       enqueueStorageWrite(() => chrome.storage.local.set({ aiAuthBlocked: false, lastBlockedApiKey: null })).catch(() => {});
     } else {
       aiAuthBlocked = res.aiAuthBlocked === true;
+    }
+    if (!isJevActive() && activePerspectiveId !== 'domain') {
+      activePerspectiveId = 'domain';
     }
     tabClassificationCache = {};
     // Load partitioned perspective caches, lazily falling back to monolithic cache only if partition missing
@@ -1827,18 +1834,18 @@ function updatePerspectiveTelemetry() {
   const aiLabel = (container && typeof container.querySelector === 'function') ? container.querySelector('.telemetry-label') : document.querySelector('.telemetry-label');
   if (!dot || !aiLabel) return;
 
-  if (activePerspectiveId === 'domain') {
-    dot.className = 'telemetry-dot local';
-    aiLabel.textContent = typeof t === 'function' ? t('rail.rules_local') : 'Local rules';
-    if (container) container.title = typeof t === 'function' ? t('rail.domain_tooltip') : 'Domain: Group tabs by URL hostname — 100% local, no AI';
-  } else if (aiAuthBlocked) {
+  if (aiAuthBlocked) {
     dot.className = 'telemetry-dot auth-blocked';
-    aiLabel.textContent = 'Auth Blocked';
-    if (container) container.title = typeof t === 'function' ? t('telemetry.status_offline') : 'Classification offline';
-  } else {
+    aiLabel.textContent = typeof t === 'function' ? t('telemetry.status_auth_error_label') : 'API Key Issue';
+    if (container) container.title = typeof t === 'function' ? t('telemetry.status_auth_error') : 'OpenRouter API key invalid or restricted';
+  } else if (openRouterApiKey) {
     dot.className = 'telemetry-dot ready';
-    aiLabel.textContent = openRouterApiKey ? 'OpenRouter (Jev)' : 'Smart Local';
-    if (container) container.title = typeof t === 'function' ? (openRouterApiKey ? t('telemetry.status_openrouter') : t('telemetry.status_active')) : 'Classification active';
+    aiLabel.textContent = 'OpenRouter (Jev)';
+    if (container) container.title = typeof t === 'function' ? t('telemetry.status_openrouter') : 'AI classification active (Model Jev)';
+  } else {
+    dot.className = 'telemetry-dot inactive';
+    aiLabel.textContent = typeof t === 'function' ? t('telemetry.status_inactive') : 'AI Inactive';
+    if (container) container.title = typeof t === 'function' ? t('telemetry.status_inactive_tooltip') : 'OpenRouter API key required to activate AI perspectives';
   }
 }
 
@@ -2395,6 +2402,18 @@ async function releaseAiKeys(keys, owner) {
 let activeClassificationAbortController = null;
 
 async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
+  if (!isJevActive() && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+    try {
+      const stored = await chrome.storage.local.get(['openRouterApiKey', 'classifierApiKey', 'aiAuthBlocked']);
+      const k = ((stored.openRouterApiKey !== undefined ? stored.openRouterApiKey : stored.classifierApiKey) || '').trim().replace(/[^\x21-\x7E]/g, '');
+      if (k) openRouterApiKey = k;
+      if (stored.aiAuthBlocked !== undefined) aiAuthBlocked = stored.aiAuthBlocked === true;
+    } catch {}
+  }
+  if (!isJevActive()) {
+    const pid = perspective?.id;
+    return (pid && tabClassificationCache[pid]) ? tabClassificationCache[pid] : {};
+  }
   if (!perspective || !perspective.labels || perspective.labels.length === 0) {
     return {};
   }
@@ -2427,20 +2446,13 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
     return normUrl && !inFlightUrls.has(`${pid}:${normUrl}`);
   });
 
-  // 2. Ensure every tab has at least an instant local fallback in memory
-  let hasNewLocalFallback = false;
-  const localFallbackUpdates = {};
+  // 2. For incognito tabs only, classify locally in-memory to preserve privacy without sending to cloud AI
   for (const tab of tabs) {
     const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
     if (!normUrl || isDangerousKey(normUrl)) continue;
-    if (!cache[normUrl]) {
+    if (!cache[normUrl] && tab.incognito) {
       const localLabel = localFallbackClassify(tab, perspective.labels);
       cache[normUrl] = { label: localLabel, source: 'local', timestamp: Date.now() };
-      // Never commit incognito browsing data to disk storage
-      if (!tab.incognito) {
-        localFallbackUpdates[normUrl] = cache[normUrl];
-        hasNewLocalFallback = true;
-      }
     }
   }
 
@@ -2457,14 +2469,9 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
     }
   }
 
-  // If no OpenRouter key is set or no tabs need AI, return cache immediately without unnecessary I/O
-  if (!openRouterApiKey || aiAuthBlocked || toClassify.length === 0) {
+  // If Jev is not active (no OpenRouter key or auth blocked) or no tabs need AI, return cache immediately
+  if (!isJevActive() || toClassify.length === 0) {
     for (const key of pendingKeys) inFlightUrls.delete(key);
-    if (hasNewLocalFallback) {
-      try {
-        await saveClassificationCacheAtomic(pid, localFallbackUpdates);
-      } catch {}
-    }
     return tabClassificationCache[pid] || cache;
   }
 
@@ -2697,7 +2704,9 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
           batch.forEach(tab => {
             const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
             if (normUrl && !isDangerousKey(normUrl) && (!cache[normUrl] || !['ai', 'ai-low-confidence'].includes(getCacheSource(cache[normUrl])))) {
-              const fallback = localFallbackClassify(tab, perspective.labels);
+              const fallback = (aiAuthBlocked || !isJevActive())
+                ? ((perspective.labels || []).find(l => isFallbackLabel(getLabelName(l)))?.name || 'Khác')
+                : localFallbackClassify(tab, perspective.labels);
               cache[normUrl] = {
                 label: fallback,
                 source: 'local',
@@ -2765,7 +2774,7 @@ let isBackgroundClassifying = false;
 let pendingClassificationRequest = null;
 
 function triggerBackgroundClassification(tabs, perspective) {
-  if (!tabs || tabs.length === 0 || !openRouterApiKey || aiAuthBlocked) return;
+  if (!tabs || tabs.length === 0 || !isJevActive()) return;
   const pid = perspective.id;
 
   if (isBackgroundClassifying) {
@@ -2853,7 +2862,7 @@ function renderPerspectiveTagsBar(groupsOverride = null) {
   const isDomainView = activePerspectiveId === 'domain';
   const activeP = currentPerspectives.find(p => p.id === activePerspectiveId);
 
-  if (isDomainView || !activeP) {
+  if (isDomainView || !activeP || !isJevActive()) {
     barEl.style.display = 'none';
     barEl.innerHTML = '';
     resetRenderCache('perspectiveTags');
@@ -2966,6 +2975,26 @@ function renderPerspectiveTagsBar(groupsOverride = null) {
 
 async function switchPerspective(pid) {
   if (!pid || pid === activePerspectiveId || isDangerousKey(pid) || !currentPerspectives.some(p => p.id === pid)) return;
+  if (pid !== 'domain' && !isJevActive()) {
+    if (typeof showToast === 'function') {
+      showToast(typeof t === 'function' ? t('perspective.ai_required_toast') : 'OpenRouter API key required to activate AI perspectives');
+    }
+    if (typeof document !== 'undefined') {
+      previousModalFocus = document.activeElement;
+      const overlay = document.getElementById('apiKeyModalOverlay');
+      const keyInput = document.getElementById('apiKeyInput');
+      const langSelect = document.getElementById('settingsLanguageSelect');
+      if (overlay) {
+        if (keyInput) keyInput.value = openRouterApiKey || '';
+        if (langSelect && typeof TabOutI18n !== 'undefined') {
+          langSelect.value = TabOutI18n.getLanguage();
+        }
+        overlay.style.display = 'flex';
+        setTimeout(() => keyInput?.focus(), 50);
+      }
+    }
+    return;
+  }
   if (activeClassificationAbortController) {
     try { activeClassificationAbortController.abort(); } catch {}
     activeClassificationAbortController = null;
@@ -2977,8 +3006,10 @@ async function switchPerspective(pid) {
   if (typeof chrome !== 'undefined' && chrome.storage?.local?.set) {
     enqueueStorageWrite(() => chrome.storage.local.set({ activePerspectiveId })).catch(() => {});
   }
-  const l = document.getElementById('perspectiveLoader');
-  if (l && pid === 'domain') l.style.display = 'none';
+  if (typeof document !== 'undefined') {
+    const l = document.getElementById('perspectiveLoader');
+    if (l && pid === 'domain') l.style.display = 'none';
+  }
   await renderStaticDashboard({ inMemoryOnly: true });
   updatePerspectiveTelemetry();
 }
@@ -2997,19 +3028,27 @@ function renderPerspectiveRail(tabsOverride = null) {
 
   const realTabs = Array.isArray(tabsOverride) ? tabsOverride : getRealTabs();
   const count = realTabs.length;
+  const jevReady = isJevActive();
 
-  // Smart In-Place DOM Update: If perspective IDs haven't changed, toggle .active class in-place
+  // Smart In-Place DOM Update: If perspective IDs haven't changed, toggle .active and .locked class in-place
   // This prevents tearing down and recreating DOM nodes during clicks or rapid startup syncs
   const existingTabs = listEl.querySelectorAll('.perspective-tab');
   const canUpdateInPlace = existingTabs.length === currentPerspectives.length &&
-    Array.from(existingTabs).every((tabEl, i) => tabEl.dataset.perspectiveId === currentPerspectives[i].id);
+    Array.from(existingTabs).every((tabEl, i) => {
+      const p = currentPerspectives[i];
+      const isLocked = p.id !== 'domain' && !jevReady;
+      return tabEl.dataset.perspectiveId === p.id && tabEl.classList.contains('locked') === isLocked;
+    });
 
   if (canUpdateInPlace) {
     existingTabs.forEach((tabEl, i) => {
       const p = currentPerspectives[i];
       const isActive = p.id === activePerspectiveId;
+      const isLocked = p.id !== 'domain' && !jevReady;
       tabEl.classList.toggle('active', isActive);
+      tabEl.classList.toggle('locked', isLocked);
       tabEl.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      tabEl.setAttribute('aria-disabled', isLocked ? 'true' : 'false');
       const countEl = tabEl.querySelector('.perspective-tab-count');
       if (countEl && countEl.textContent !== String(count)) {
         countEl.textContent = count;
@@ -3025,6 +3064,7 @@ function renderPerspectiveRail(tabsOverride = null) {
 
   listEl.innerHTML = currentPerspectives.map(p => {
     const isActive = p.id === activePerspectiveId;
+    const isLocked = p.id !== 'domain' && !jevReady;
     const iconSvg = (p.icon && Object.prototype.hasOwnProperty.call(PERSPECTIVE_ICONS, p.icon))
       ? PERSPECTIVE_ICONS[p.icon]
       : PERSPECTIVE_ICONS.folder;
@@ -3034,12 +3074,15 @@ function renderPerspectiveRail(tabsOverride = null) {
         </button>`
       : '';
     const dispName = getPerspectiveDisplayName(p);
-    const tabTitle = p.id === 'domain'
-      ? (typeof t === 'function' ? t('rail.domain_tooltip') : 'Domain: Group tabs by URL hostname — 100% local, no AI')
-      : `${dispName} perspective`;
+    let tabTitle = `${dispName} perspective`;
+    if (p.id === 'domain') {
+      tabTitle = typeof t === 'function' ? t('rail.domain_tooltip') : 'Domain: Group tabs by URL hostname — 100% local, no AI';
+    } else if (isLocked) {
+      tabTitle = typeof t === 'function' ? t('rail.perspective_locked_tooltip') : 'Requires OpenRouter API key (Model Jev)';
+    }
 
     return `
-      <div class="perspective-tab ${isActive ? 'active' : ''}" role="tab" tabindex="0" aria-selected="${isActive}" data-action="switch-perspective" data-perspective-id="${escapeHtml(p.id)}" title="${escapeHtml(tabTitle)}">
+      <div class="perspective-tab ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''}" role="tab" tabindex="0" aria-selected="${isActive}" aria-disabled="${isLocked ? 'true' : 'false'}" data-action="switch-perspective" data-perspective-id="${escapeHtml(p.id)}" title="${escapeHtml(tabTitle)}">
         <span class="perspective-tab-icon">${iconSvg}</span>
         <span class="perspective-tab-name">${escapeHtml(dispName)}</span>
         <span class="perspective-tab-count">${count}</span>
@@ -3582,7 +3625,7 @@ async function renderDeferredColumn() {
       list.innerHTML = '';
       resetRenderCache('deferredActive');
       countEl.textContent = '';
-      empty.style.display = 'block';
+      empty.style.display = 'flex';
     }
 
     // Render archive section
@@ -3619,7 +3662,7 @@ async function renderDeferredColumn() {
 
   } catch (err) {
     console.warn('[tab-out] Could not load saved tabs:', err);
-    if (empty) empty.style.display = 'block';
+    if (empty) empty.style.display = 'flex';
   }
 }
 
@@ -3924,12 +3967,12 @@ async function renderStaticDashboard(options = {}) {
     }
   }
 
-  if (activePerspectiveId !== 'domain' && !currentPerspectives.some(p => p.id === activePerspectiveId)) {
+  if (activePerspectiveId !== 'domain' && (!isJevActive() || !currentPerspectives.some(p => p.id === activePerspectiveId))) {
     activePerspectiveId = 'domain';
   }
 
   // Check whether we are in Domain perspective or a custom Semantic perspective
-  if (activePerspectiveId !== 'domain') {
+  if (activePerspectiveId !== 'domain' && isJevActive()) {
     // --- SEMANTIC PERSPECTIVE GROUPING (INSTANT 0MS FAST PATH) ---
     const activeP = currentPerspectives.find(p => p.id === activePerspectiveId) || currentPerspectives[0];
     const pid = activeP ? activeP.id : 'domain';
@@ -3959,7 +4002,7 @@ async function renderStaticDashboard(options = {}) {
       }
     }
 
-    // Instant Fast Path: Group immediately from cache or local heuristic without waiting for network
+    // Instant Fast Path: Group immediately from cache without waiting for network
     for (const tab of realTabs) {
       const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
       if (!normUrl) continue;
@@ -3980,14 +4023,15 @@ async function renderStaticDashboard(options = {}) {
             uncachedTabs.push(tab);
           }
         } else {
-          label = localFallbackClassify(tab, activeP?.labels);
-          cache[normUrl] = { label, source: 'local', timestamp: Date.now() };
+          // If no domain-level AI cache exists, assign perspective fallback label ('Khác') while awaiting true Jev AI pass
+          const fallbackObj = (activeP?.labels || []).find(l => isFallbackLabel(getLabelName(l)));
+          label = fallbackObj ? getLabelName(fallbackObj) : 'Khác';
           if (!tab.incognito && !skipBackgroundAi && !inFlightUrls.has(inFlightKey) && !isFailedRecently) {
             uncachedTabs.push(tab);
           }
         }
       } else if (!['ai', 'ai-low-confidence'].includes(getCacheSource(entry))) {
-        // Upgrade local heuristics and domain-ai placeholders to true AI in background
+        // Upgrade domain-ai placeholders to true AI in background
         if (!tab.incognito && !skipBackgroundAi && !inFlightUrls.has(inFlightKey) && !isFailedRecently) {
           uncachedTabs.push(tab);
         }
@@ -5851,7 +5895,11 @@ if (typeof document !== 'undefined') {
         isSystem: false,
         labels
       });
-      activePerspectiveId = newId;
+      if (isJevActive()) {
+        activePerspectiveId = newId;
+      } else {
+        activePerspectiveId = 'domain';
+      }
     }
 
     setLocalSettingLock(400);
@@ -5880,7 +5928,9 @@ if (typeof document !== 'undefined') {
     await renderStaticDashboard();
     showToast(editId
       ? (typeof t === 'function' ? t('toast.perspective_updated') : 'Perspective updated')
-      : (typeof t === 'function' ? t('toast.perspective_created') : 'Perspective created & applied'));
+      : (isJevActive()
+        ? (typeof t === 'function' ? t('toast.perspective_created') : 'Perspective created & applied')
+        : (typeof t === 'function' ? t('toast.perspective_created_inactive') : 'Perspective saved (locked until API key configured)')));
     } finally {
       isSubmittingPerspective = false;
     }
@@ -5911,6 +5961,10 @@ if (typeof document !== 'undefined') {
     }
     setLocalSettingLock(400);
     const storagePayload = { openRouterApiKey: key, classifierApiKey: key, aiAuthBlocked: false, lastBlockedApiKey: null };
+    if (!isJevActive() && activePerspectiveId !== 'domain') {
+      activePerspectiveId = 'domain';
+      storagePayload.activePerspectiveId = 'domain';
+    }
     await enqueueStorageWrite(async () => {
       await chrome.storage.local.set(storagePayload);
     });
@@ -5928,7 +5982,7 @@ if (typeof document !== 'undefined') {
     if (overlay) overlay.style.display = 'none';
     restoreModalFocus();
 
-    showToast(typeof t === 'function' ? t('toast.settings_saved') : (key ? 'OpenRouter API key saved' : 'Using smart local fallback'));
+    showToast(typeof t === 'function' ? t('toast.settings_saved') : (key ? 'OpenRouter API key saved' : 'Settings saved'));
 
     // Instantly upgrade all active tabs from local heuristic to Jev AI
     await renderStaticDashboard();
@@ -6132,7 +6186,7 @@ if (typeof document !== 'undefined') {
       if (row) {
         row.classList.remove('is-desc-expanded');
         textarea.style.overflowY = 'hidden';
-        textarea.style.height = '32px';
+        textarea.style.height = '34px';
         if (typeof textarea.value === 'string') {
           textarea.title = textarea.value.trim();
         }
@@ -6385,10 +6439,18 @@ if (typeof module !== 'undefined' && module.exports) {
     getRealTabs,
     renderPerspectiveRail,
     switchPerspective,
+    isJevActive,
+    get openRouterApiKey() { return openRouterApiKey; },
+    set openRouterApiKey(v) { openRouterApiKey = typeof v === 'string' ? v.trim() : ''; },
+    get aiAuthBlocked() { return aiAuthBlocked; },
+    set aiAuthBlocked(v) { aiAuthBlocked = Boolean(v); },
     get activePerspectiveId() { return activePerspectiveId; },
     set activePerspectiveId(v) { activePerspectiveId = v; },
     get isLocalSettingUpdate() { return isLocalSettingUpdate; },
     set isLocalSettingUpdate(v) { isLocalSettingUpdate = Boolean(v); },
+    get isPerspectivesLoaded() { return isPerspectivesLoaded; },
+    set isPerspectivesLoaded(v) { isPerspectivesLoaded = Boolean(v); },
+    cloneDefaultPerspectives,
     get currentPerspectives() { return currentPerspectives; },
     set currentPerspectives(v) { currentPerspectives = v; },
     isRealTabUrl,
@@ -6417,7 +6479,8 @@ if (typeof module !== 'undefined' && module.exports) {
     checkOffSavedTab,
     unarchiveSavedTab,
     deleteSavedTab,
-    dismissSavedTab
+    dismissSavedTab,
+    renderDeferredColumn
   };
 }
 

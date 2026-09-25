@@ -774,29 +774,6 @@
   color: var(--vbg-text-secondary);
 }
 
-.perspective-add-icon-btn {
-  background: none;
-  border: none;
-  color: var(--vbg-text-secondary);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--vbg-radius-small);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.15s ease, background-color 0.15s ease;
-}
-
-.perspective-add-icon-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-.perspective-add-icon-btn:hover {
-  color: var(--vbg-text-primary);
-  background: var(--vbg-surface-secondary);
-}
-
 .perspective-list {
   display: flex;
   flex-direction: column;
@@ -839,6 +816,20 @@
   background: var(--vbg-surface-secondary);
   color: var(--vbg-text-primary);
   border-color: var(--vbg-border-default);
+}
+
+.perspective-tab.locked {
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.perspective-tab.locked:hover {
+  opacity: 0.8;
+  background: var(--vbg-surface-secondary);
+}
+
+.perspective-tab.locked .perspective-tab-name {
+  color: var(--vbg-text-tertiary);
 }
 
 .perspective-tab.active::before {
@@ -998,6 +989,12 @@
 
 .telemetry-dot.auth-blocked {
   background: var(--vbg-color-error);
+  box-shadow: none;
+}
+
+.telemetry-dot.inactive {
+  background: var(--vbg-text-tertiary, #666);
+  opacity: 0.5;
   box-shadow: none;
 }
 
@@ -1733,9 +1730,52 @@
 }
 
 .deferred-empty {
-  font-size: var(--vbg-type-compact);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--vbg-space-8) var(--vbg-space-4);
+  background: var(--vbg-surface-secondary);
+  border: 1px dashed var(--vbg-border-subtle);
+  border-radius: var(--vbg-radius);
+  margin-top: var(--vbg-space-2);
+}
+
+.deferred-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.04);
   color: var(--vbg-text-secondary);
-  padding: var(--vbg-space-6) 0;
+  opacity: 0.7;
+  margin-inline: auto;
+  margin-bottom: var(--vbg-space-3);
+}
+
+.deferred-empty-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.deferred-empty-title {
+  margin: 0 0 var(--vbg-space-1) 0;
+  font-size: var(--vbg-type-compact);
+  font-weight: var(--vbg-weight-medium);
+  color: var(--vbg-text-primary);
+  line-height: 1.4;
+  text-align: center;
+}
+
+.deferred-empty-hint {
+  margin: 0 auto;
+  font-size: var(--vbg-type-metadata);
+  color: var(--vbg-text-secondary);
+  line-height: 1.5;
+  max-width: 240px;
   text-align: center;
 }
 
@@ -2233,7 +2273,7 @@ body:has(#tabOutDupeBanner:not([style*="display: none"]):not([style*="display:no
   border: 1px solid var(--vbg-border-default);
   border-radius: var(--vbg-radius);
   width: 100%;
-  max-width: 580px;
+  max-width: 620px;
   padding: var(--vbg-space-5);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4);
   animation: taboutScaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
@@ -2618,20 +2658,35 @@ button.tag-color-swatch.none-swatch {
 }
 
 .tag-field-name {
-  flex: 0 0 135px;
-  width: 135px;
+  flex: 0 0 175px;
+  width: 175px;
   min-width: 0;
-  height: 32px;
+  height: 34px;
+  min-height: 34px !important;
+  max-height: 34px;
+  border: 1px solid var(--vbg-border-subtle) !important;
+  border-radius: var(--vbg-radius-small) !important;
   box-sizing: border-box;
+  font-weight: var(--vbg-weight-medium);
+  padding: 0 var(--vbg-space-3);
+  background: var(--vbg-surface-primary) !important;
+  color: var(--vbg-text-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tag-field-name:focus {
+  outline: none !important;
+  border-color: var(--vbg-focus, #0070f3) !important;
+  box-shadow: 0 0 0 1px var(--vbg-focus, #0070f3) !important;
 }
 
 .tag-field-desc {
   flex: 1;
   min-width: 0;
-  height: 32px;
-  min-height: 32px;
+  height: 34px;
+  min-height: 34px;
   line-height: 1.45;
-  padding: 5px var(--vbg-space-3);
+  padding: 6px var(--vbg-space-3);
   resize: none;
   overflow: hidden;
   white-space: nowrap;
@@ -2639,18 +2694,24 @@ button.tag-color-swatch.none-swatch {
   box-sizing: border-box;
   font-family: inherit;
   font-size: var(--vbg-type-compact);
-  border-radius: var(--vbg-radius-small);
+  border: 1px solid var(--vbg-border-subtle) !important;
+  border-radius: var(--vbg-radius-small) !important;
+  background: var(--vbg-surface-primary) !important;
+  color: var(--vbg-text-secondary);
   transition: height 0.22s cubic-bezier(0.16, 1, 0.3, 1),
               min-height 0.22s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.15s ease,
-              background-color 0.15s ease,
-              box-shadow 0.15s ease;
+              box-shadow 0.15s ease,
+              color 0.15s ease;
 }
 
 .tag-row.is-desc-expanded .tag-field-desc,
 .tag-field-desc:focus {
   white-space: pre-wrap;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  outline: none !important;
+  border-color: var(--vbg-focus, #0070f3) !important;
+  box-shadow: 0 0 0 1px var(--vbg-focus, #0070f3) !important;
+  color: var(--vbg-text-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2670,9 +2731,11 @@ button.tag-color-swatch.none-swatch {
   .tag-field-name {
     flex: 1 1 auto;
     width: 100%;
+    border-radius: var(--vbg-radius-small) !important;
   }
   .tag-field-desc {
     width: 100%;
+    border-radius: var(--vbg-radius-small) !important;
   }
 }
 
@@ -2683,10 +2746,10 @@ button.tag-row-del-btn,
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  width: 32px !important;
-  height: 32px !important;
-  min-height: 32px !important;
-  max-height: 32px !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
   padding: 0 !important;
   margin: 0 !important;
   background: transparent !important;
@@ -2904,11 +2967,6 @@ button.deferred-dismiss.confirming {
   border-radius: var(--vbg-radius-small);
   font-size: var(--vbg-type-micro);
   color: var(--vbg-text-secondary);
-}
-
-.tags-system-fallback-hint .fallback-dot {
-  color: var(--vbg-text-tertiary);
-  font-size: 14px;
 }
 
 .perspective-modal-actions {

@@ -66,11 +66,6 @@
       <aside class="perspective-rail" id="perspectiveRail">
         <div class="perspective-header">
           <span class="perspective-title" data-i18n="rail.perspectives">Perspectives</span>
-          <button type="button" class="perspective-add-icon-btn" data-action="open-perspective-modal" title="Add new perspective" aria-label="Add new perspective" data-i18n-title="rail.add_perspective" data-i18n-aria-label="rail.add_perspective">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-          </button>
         </div>
 
         <nav class="perspective-list" id="perspectiveList" aria-label="Perspectives"></nav>
@@ -84,8 +79,8 @@
 
         <div class="perspective-telemetry" id="perspectiveTelemetry">
           <div class="telemetry-item" id="telemetryAiStatus" title="AI classification status">
-            <span class="telemetry-dot ready"></span>
-            <span class="telemetry-label" data-i18n="telemetry.status_active">Local classification active</span>
+            <span class="telemetry-dot inactive"></span>
+            <span class="telemetry-label" data-i18n="telemetry.status_inactive">AI Inactive</span>
             <button type="button" class="telemetry-config-btn" data-action="open-api-key-modal" title="Configure OpenRouter API key" aria-label="Configure OpenRouter API key" data-i18n-title="rail.openrouter_config" data-i18n-aria-label="rail.openrouter_config">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
             </button>
@@ -143,8 +138,14 @@
         <div class="deferred-list" id="deferredList" style="display:none"></div>
 
         <!-- Empty state -->
-        <div class="deferred-empty" id="deferredEmpty" data-i18n="saved.empty">
-          Nothing saved.
+        <div class="deferred-empty" id="deferredEmpty">
+          <div class="deferred-empty-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
+            </svg>
+          </div>
+          <p class="deferred-empty-title" data-i18n="saved.empty_title">Nothing saved yet</p>
+          <p class="deferred-empty-hint" data-i18n="saved.empty_hint">Click the save icon on any tab to keep it here for later</p>
         </div>
 
         <!-- Recently closed section (5 most recently closed tabs) -->
@@ -224,7 +225,6 @@
             <span data-i18n="modal.perspective.add_tag">Add tag</span>
           </button>
           <div class="tags-system-fallback-hint" id="perspectiveFallbackHint">
-            <span class="fallback-dot" aria-hidden="true">•</span>
             <span data-i18n="modal.perspective.fallback_hint">Tag "Other" is the default for uncategorized tabs (managed by system, cannot be deleted).</span>
           </div>
         </div>
@@ -260,8 +260,8 @@
         </div>
         <div class="form-group">
           <label for="apiKeyInput" class="form-label" data-i18n="modal.settings.api_key_label">OpenRouter API Key (Optional)</label>
-          <input type="password" id="apiKeyInput" class="form-input" placeholder="sk-or-v1-... (leave blank to use smart local rules)" data-i18n-placeholder="modal.settings.api_key_placeholder" autocomplete="off">
-          <span class="form-help" data-i18n="modal.settings.api_key_help">Uses OpenRouter to automatically categorize open tabs. If empty or offline, fast local rules are used instantly without sending data externally.</span>
+          <input type="password" id="apiKeyInput" class="form-input" placeholder="sk-or-v1-... (required for custom perspectives)" data-i18n-placeholder="modal.settings.api_key_placeholder" autocomplete="off">
+          <span class="form-help" data-i18n="modal.settings.api_key_help">Uses OpenRouter (Model Jev) to categorize open tabs under custom perspectives. Without an API key, Tab Out organizes tabs cleanly by Domain.</span>
         </div>
         <div class="perspective-modal-actions">
           <button type="button" class="btn-secondary" data-action="close-api-key-modal" data-i18n="modal.settings.cancel">Cancel</button>
