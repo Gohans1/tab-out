@@ -257,12 +257,14 @@ function areTabsEqual(a, b) {
     const tA = a[i];
     const tB = b[i];
     if (!tA || !tB) return false;
+    // Only what the dashboard shows counts: titles are displayed without unread counts, and icons
+    // come from the URL, so a mail tab ticking "(3)" → "(4)" or swapping favicons costs no render.
     if (tA.id !== tB.id ||
         tA.url !== tB.url ||
-        tA.title !== tB.title ||
+        (tA.title !== tB.title && stripTitleNoise(tA.title) !== stripTitleNoise(tB.title)) ||
         tA.active !== tB.active ||
-        tA.favIconUrl !== tB.favIconUrl ||
-        tA.windowId !== tB.windowId) {
+        tA.windowId !== tB.windowId ||
+        tA.status !== tB.status) {
       return false;
     }
   }
@@ -294,6 +296,7 @@ async function fetchOpenTabs() {
         lastAccessed: typeof t.lastAccessed === 'number' ? t.lastAccessed : 0,
         openerTabId:  t.openerTabId,
         incognito:    Boolean(t.incognito),
+        status:       t.status,
         // Flag Tab Out's own pages so we can detect duplicate new tabs
         isTabOut:     url === newtabUrl || url === 'chrome://newtab/' || url === 'chrome://newtab' || (extensionId && typeof url === 'string' && url.startsWith(`chrome-extension://${extensionId}/`)),
       };
@@ -639,6 +642,7 @@ function animateCardOut(card) {
   setTimeout(() => {
     card.remove();
     checkAndShowEmptyState();
+    updateHeaderAndStats();
   }, 200);
 }
 
@@ -868,6 +872,9 @@ function syncCardState(card) {
     animateCardOut(card);
     if (domain) {
       domainGroups = domainGroups.filter(g => g.domain !== domain);
+      if (typeof activeCategoryDomainGroups !== 'undefined' && Array.isArray(activeCategoryDomainGroups)) {
+        activeCategoryDomainGroups = activeCategoryDomainGroups.filter(g => g.domain !== domain);
+      }
       expandedDomains.delete(domain);
     }
     return;
@@ -883,7 +890,7 @@ function syncCardState(card) {
   });
 
   // Update in-memory group tab count
-  const grp = domainGroups.find(g => g.domain === domain);
+  const grp = domainGroups.find(g => g.domain === domain) || (typeof activeCategoryDomainGroups !== 'undefined' ? activeCategoryDomainGroups.find(g => g.domain === domain) : null);
   if (grp) {
     // Keep only tabs whose URLs still exist in the remaining chips
     const remainingUrls = new Set(Array.from(chips).map(c => c.dataset.tabUrl));
@@ -943,6 +950,21 @@ function checkAndShowEmptyState() {
   const missionsEl = document.getElementById('openTabsMissions');
   if (!missionsEl) return;
 
+  if (activeCategoryFilter !== null) {
+    const focusRows = missionsEl.querySelectorAll('.page-chip:not(.removing), .category-focus-tab-row:not(.removing)');
+    if (focusRows.length === 0 && !missionsEl.querySelector('.category-focus-empty')) {
+      const activeP = (typeof currentPerspectives !== 'undefined' && Array.isArray(currentPerspectives))
+        ? currentPerspectives.find(p => p.id === activePerspectiveId)
+        : null;
+      const displayLabels = typeof getPerspectiveDisplayLabels === 'function' ? getPerspectiveDisplayLabels(activeP) : (activeP?.labels || []);
+      const categoryMeta = displayLabels.find(l => areCategoryLabelsEquivalent(l?.name || (typeof l === 'string' ? l : ''), activeCategoryFilter, activeP)) || { name: activeCategoryFilter, description: '', color: '' };
+      const emptyGroup = { label: activeCategoryFilter, domain: `perspective:${activeCategoryFilter}`, isSemantic: true, tabs: [] };
+      const emptyHtml = renderCategoryFocusView(emptyGroup, categoryMeta);
+      renderIfChanged(missionsEl, emptyHtml, 'missions');
+    }
+    return;
+  }
+
   const remaining = missionsEl.querySelectorAll('.mission-card').length;
   if (remaining > 0) return;
 
@@ -988,11 +1010,31 @@ function renderOpenTabsHeaderActions(tabsList) {
   let actionsHtml = '';
   if (!isDomainView) {
     const editTagsText = typeof t === 'function' ? t('tabs.edit_tags') : 'Chỉnh sửa tags';
-    actionsHtml += `<button type="button" class="perspective-edit-header-btn" data-action="edit-perspective" data-perspective-id="${escapeHtml(activePerspectiveId)}" title="${escapeHtml(editTagsText)}">${PERSPECTIVE_ICONS.edit}<span>${escapeHtml(editTagsText)}</span></button>`;
+    actionsHtml += `<button type="button" class="perspective-edit-header-btn" data-variant="tertiary" data-action="edit-perspective" data-perspective-id="${escapeHtml(activePerspectiveId)}" title="${escapeHtml(editTagsText)}">${PERSPECTIVE_ICONS.edit}<span>${escapeHtml(editTagsText)}</span></button>`;
   }
-  if (realTabs.length > 1) {
+
+  if (activeCategoryFilter !== null && !isDomainView) {
+    // In category focus view: close action applies only to this category's tabs
+    const activeP = (typeof currentPerspectives !== 'undefined' && Array.isArray(currentPerspectives))
+      ? currentPerspectives.find(p => p.id === activePerspectiveId)
+      : null;
+    const matchedGroup = (typeof domainGroups !== 'undefined' && Array.isArray(domainGroups))
+      ? domainGroups.find(g => {
+          const name = g.label || g.domain;
+          return typeof name === 'string' && areCategoryLabelsEquivalent(name, activeCategoryFilter, activeP);
+        })
+      : null;
+    const catTabs = matchedGroup?.tabs || [];
+    const catCount = catTabs.length;
+    if (catCount > 0) {
+      const closeCatText = typeof t === 'function'
+        ? (catCount === 1 ? t('tabs.close_single_tab') : t('tabs.close_all_count', { count: catCount }))
+        : (catCount === 1 ? 'Close tab' : `Close all ${catCount} tabs`);
+      actionsHtml += `<button class="action-btn close-tabs close-all-btn" data-variant="tertiary" data-action="close-category-tabs" data-category="${escapeHtml(activeCategoryFilter)}">${ICONS.close} ${escapeHtml(closeCatText)}</button>`;
+    }
+  } else if (realTabs.length > 1) {
     const closeAllText = typeof t === 'function' ? t('tabs.close_all_count', { count: realTabs.length }) : `Close all ${realTabs.length} tabs`;
-    actionsHtml += `<button class="action-btn close-tabs close-all-btn" data-action="close-all-open-tabs">${ICONS.close} ${escapeHtml(closeAllText)}</button>`;
+    actionsHtml += `<button class="action-btn close-tabs close-all-btn" data-variant="tertiary" data-action="close-all-open-tabs">${ICONS.close} ${escapeHtml(closeAllText)}</button>`;
   }
 
   renderIfChanged(container, actionsHtml, 'headerActions');
@@ -1028,18 +1070,37 @@ function updateHeaderAndStats() {
   const missionsEl = document.getElementById('openTabsMissions');
   const countEl = document.getElementById('openTabsSectionCount');
   if (missionsEl && countEl) {
-    const visibleCards = missionsEl.querySelectorAll('.mission-card:not(.closing)').length;
-    const isDomain = activePerspectiveId === 'domain';
-    const activeP = currentPerspectives.find(p => p.id === activePerspectiveId);
-    const totalLabels = (!isDomain && activeP?.labels?.length) || 0;
-    const unitLabel = isDomain
-      ? (typeof t === 'function' ? (visibleCards !== 1 ? t('tabs.domains_local_plural') : t('tabs.domains_local_single')) : (visibleCards !== 1 ? 'domains · Local' : 'domain · Local'))
-      : (totalLabels > 0
-          ? (typeof t === 'function' ? t('tabs.categories_of', { visible: visibleCards, total: Math.max(totalLabels, visibleCards) }) : `${visibleCards} of ${Math.max(totalLabels, visibleCards)} categories`)
-          : (typeof t === 'function' ? (visibleCards !== 1 ? t('tabs.categories_plural') : t('tabs.categories_single')) : (visibleCards !== 1 ? 'categories' : 'category')));
-    countEl.textContent = isDomain || totalLabels === 0
-      ? `${visibleCards} ${unitLabel}`
-      : unitLabel;
+    if (activeCategoryFilter !== null && missionsEl.querySelector('.category-focus-view')) {
+      let focusTabsCount = 0;
+      const chips = missionsEl.querySelectorAll('.page-chip:not(.removing), .category-focus-tab-row:not(.removing)');
+      chips.forEach(c => {
+        if (typeof c.closest === 'function' && c.closest('.mission-card.closing')) return;
+        const cnt = parseInt(c.dataset.tabCount || '1', 10);
+        focusTabsCount += (isNaN(cnt) || cnt < 1) ? 1 : cnt;
+      });
+      countEl.textContent = typeof t === 'function'
+        ? (focusTabsCount === 1 ? t('tabs.open_tabs_count_single') : t('tabs.open_tabs_count_plural', { count: focusTabsCount }))
+        : `${focusTabsCount} tab${focusTabsCount !== 1 ? 's' : ''}`;
+      const headerCountEl = missionsEl.querySelector('.category-focus-count');
+      if (headerCountEl) {
+        headerCountEl.textContent = typeof t === 'function'
+          ? (focusTabsCount === 1 ? t('tabs.open_tabs_count_single') : t('tabs.open_tabs_count_plural', { count: focusTabsCount }))
+          : `${focusTabsCount} tab${focusTabsCount !== 1 ? 's' : ''}`;
+      }
+    } else {
+      const visibleCards = missionsEl.querySelectorAll('.mission-card:not(.closing)').length;
+      const isDomain = activePerspectiveId === 'domain';
+      const activeP = currentPerspectives.find(p => p.id === activePerspectiveId);
+      const totalLabels = (!isDomain && activeP?.labels?.length) || 0;
+      const unitLabel = isDomain
+        ? (typeof t === 'function' ? (visibleCards !== 1 ? t('tabs.domains_local_plural') : t('tabs.domains_local_single')) : (visibleCards !== 1 ? 'domains · Local' : 'domain · Local'))
+        : (totalLabels > 0
+            ? (typeof t === 'function' ? t('tabs.categories_of', { visible: visibleCards, total: Math.max(totalLabels, visibleCards) }) : `${visibleCards} of ${Math.max(totalLabels, visibleCards)} categories`)
+            : (typeof t === 'function' ? (visibleCards !== 1 ? t('tabs.categories_plural') : t('tabs.categories_single')) : (visibleCards !== 1 ? 'categories' : 'category')));
+      countEl.textContent = isDomain || totalLabels === 0
+        ? `${visibleCards} ${unitLabel}`
+        : unitLabel;
+    }
   }
   const recentTabs = getRecentTabs(realTabs, { limit: 5 });
   renderPerspectiveTagsBar(domainGroups);
@@ -1049,7 +1110,7 @@ function updateHeaderAndStats() {
 
   renderOpenTabsHeaderActions(realTabs);
 
-  if (realTabs.length === 0) {
+  if (realTabs.length === 0 || activeCategoryFilter !== null) {
     checkAndShowEmptyState();
   }
 }
@@ -1367,6 +1428,11 @@ function isFallbackLabel(name) {
   return FALLBACK_TAG_REGEX.test(name.trim());
 }
 
+function getFallbackLabelName(lang) {
+  const activeLang = lang || (typeof TabOutI18n !== 'undefined' ? TabOutI18n.getLanguage() : 'en');
+  return activeLang === 'vi' ? 'Khác' : 'Other';
+}
+
 function buildChoiceCriteria(perspective) {
   const criteria = Object.create(null);
   if (!perspective || !Array.isArray(perspective.labels)) return criteria;
@@ -1385,12 +1451,74 @@ function buildChoiceCriteria(perspective) {
     }
   }
   if (!hasOther) {
-    criteria['Khác'] = 'Khác';
+    const fallbackName = getFallbackLabelName();
+    criteria[fallbackName] = fallbackName;
   }
   if (Object.keys(criteria).length < 2) {
     criteria['Chung'] = 'Chung';
   }
   return criteria;
+}
+
+function sortGroupsByPerspectiveLabels(groups, labels, activeP = null) {
+  if (!Array.isArray(groups)) return [];
+  const normalized = normalizeLabels(labels);
+  const labelOrderMap = new Map();
+
+  normalized.forEach((l, idx) => {
+    if (l && typeof l.name === 'string') {
+      const key = l.name.toLowerCase().trim();
+      if (!labelOrderMap.has(key)) {
+        labelOrderMap.set(key, idx);
+      }
+      if (typeof PERSPECTIVE_TEMPLATES !== 'undefined') {
+        for (const t of Object.values(PERSPECTIVE_TEMPLATES)) {
+          if (!t || !t.en || !t.vi) continue;
+          const enList = t.en.labels || [];
+          const viList = t.vi.labels || [];
+          for (let i = 0; i < Math.min(enList.length, viList.length); i++) {
+            const enName = (enList[i]?.name || '').toLowerCase().trim();
+            const viName = (viList[i]?.name || '').toLowerCase().trim();
+            if (key === enName && !labelOrderMap.has(viName)) {
+              labelOrderMap.set(viName, idx);
+            } else if (key === viName && !labelOrderMap.has(enName)) {
+              labelOrderMap.set(enName, idx);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const getGroupIdx = (g) => {
+    const raw = typeof g?.label === 'string' ? g.label : (typeof g?.domain === 'string' ? g.domain.replace(/^perspective:/, '') : '');
+    const key = raw.toLowerCase().trim();
+    if (labelOrderMap.has(key)) return labelOrderMap.get(key);
+    if (typeof areCategoryLabelsEquivalent === 'function') {
+      for (let i = 0; i < normalized.length; i++) {
+        if (areCategoryLabelsEquivalent(raw, normalized[i].name, activeP)) {
+          labelOrderMap.set(key, i); // Memoize match to avoid repeated scans
+          return i;
+        }
+      }
+    }
+    return Infinity;
+  };
+
+  return [...groups].sort((a, b) => {
+    const aIsOther = isFallbackLabel(a?.label);
+    const bIsOther = isFallbackLabel(b?.label);
+    if (aIsOther !== bIsOther) return aIsOther ? 1 : -1;
+
+    const idxA = getGroupIdx(a);
+    const idxB = getGroupIdx(b);
+
+    if (idxA !== idxB) return idxA - idxB;
+
+    const countA = Array.isArray(a?.tabs) ? a.tabs.length : 0;
+    const countB = Array.isArray(b?.tabs) ? b.tabs.length : 0;
+    return countB - countA;
+  });
 }
 
 function createTagRowElement(name = '', description = '', color = '') {
@@ -1414,13 +1542,13 @@ function createTagRowElement(name = '', description = '', color = '') {
   const deleteTagLabel = typeof t === 'function' ? t('modal.perspective.delete_tag') : 'Delete tag';
 
   const swatchesHtml = [
-    `<button type="button" class="tag-color-swatch none-swatch${!resolved ? ' active' : ''}" data-color="" title="${escapeHtml(noneSwatchTitle)}" aria-label="${escapeHtml(noneSwatchTitle)}" role="menuitemradio" aria-checked="${!resolved ? 'true' : 'false'}"></button>`,
-    `<button type="button" class="tag-color-swatch${activeKey === 'cyan' ? ' active' : ''}" data-color="cyan" style="background-color: #06b6d4;" title="Cyan" aria-label="Cyan" role="menuitemradio" aria-checked="${activeKey === 'cyan' ? 'true' : 'false'}"></button>`,
-    `<button type="button" class="tag-color-swatch${activeKey === 'purple' ? ' active' : ''}" data-color="purple" style="background-color: #a855f7;" title="Purple" aria-label="Purple" role="menuitemradio" aria-checked="${activeKey === 'purple' ? 'true' : 'false'}"></button>`,
-    `<button type="button" class="tag-color-swatch${activeKey === 'emerald' ? ' active' : ''}" data-color="emerald" style="background-color: #10b981;" title="Emerald" aria-label="Emerald" role="menuitemradio" aria-checked="${activeKey === 'emerald' ? 'true' : 'false'}"></button>`,
-    `<button type="button" class="tag-color-swatch${activeKey === 'amber' ? ' active' : ''}" data-color="amber" style="background-color: #f59e0b;" title="Amber" aria-label="Amber" role="menuitemradio" aria-checked="${activeKey === 'amber' ? 'true' : 'false'}"></button>`,
-    `<button type="button" class="tag-color-swatch${activeKey === 'rose' ? ' active' : ''}" data-color="rose" style="background-color: #f43f5e;" title="Rose" aria-label="Rose" role="menuitemradio" aria-checked="${activeKey === 'rose' ? 'true' : 'false'}"></button>`,
-    `<button type="button" class="tag-color-swatch${activeKey === 'blue' ? ' active' : ''}" data-color="blue" style="background-color: #3b82f6;" title="Blue" aria-label="Blue" role="menuitemradio" aria-checked="${activeKey === 'blue' ? 'true' : 'false'}"></button>`
+    `<button type="button" class="tag-color-swatch none-swatch${!resolved ? ' active' : ''}" data-variant="tertiary" data-color="" title="${escapeHtml(noneSwatchTitle)}" aria-label="${escapeHtml(noneSwatchTitle)}" role="menuitemradio" aria-checked="${!resolved ? 'true' : 'false'}"></button>`,
+    `<button type="button" class="tag-color-swatch${activeKey === 'cyan' ? ' active' : ''}" data-variant="tertiary" data-color="cyan" style="background-color: #06b6d4;" title="Cyan" aria-label="Cyan" role="menuitemradio" aria-checked="${activeKey === 'cyan' ? 'true' : 'false'}"></button>`,
+    `<button type="button" class="tag-color-swatch${activeKey === 'purple' ? ' active' : ''}" data-variant="tertiary" data-color="purple" style="background-color: #a855f7;" title="Purple" aria-label="Purple" role="menuitemradio" aria-checked="${activeKey === 'purple' ? 'true' : 'false'}"></button>`,
+    `<button type="button" class="tag-color-swatch${activeKey === 'emerald' ? ' active' : ''}" data-variant="tertiary" data-color="emerald" style="background-color: #10b981;" title="Emerald" aria-label="Emerald" role="menuitemradio" aria-checked="${activeKey === 'emerald' ? 'true' : 'false'}"></button>`,
+    `<button type="button" class="tag-color-swatch${activeKey === 'amber' ? ' active' : ''}" data-variant="tertiary" data-color="amber" style="background-color: #f59e0b;" title="Amber" aria-label="Amber" role="menuitemradio" aria-checked="${activeKey === 'amber' ? 'true' : 'false'}"></button>`,
+    `<button type="button" class="tag-color-swatch${activeKey === 'rose' ? ' active' : ''}" data-variant="tertiary" data-color="rose" style="background-color: #f43f5e;" title="Rose" aria-label="Rose" role="menuitemradio" aria-checked="${activeKey === 'rose' ? 'true' : 'false'}"></button>`,
+    `<button type="button" class="tag-color-swatch${activeKey === 'blue' ? ' active' : ''}" data-variant="tertiary" data-color="blue" style="background-color: #3b82f6;" title="Blue" aria-label="Blue" role="menuitemradio" aria-checked="${activeKey === 'blue' ? 'true' : 'false'}"></button>`
   ].join('');
 
   row.innerHTML = `
@@ -1435,7 +1563,7 @@ function createTagRowElement(name = '', description = '', color = '') {
       </svg>
     </button>
     <div class="tag-color-picker-wrap">
-      <button type="button" class="tag-color-btn" data-action="toggle-tag-color-picker" aria-haspopup="true" aria-expanded="false" aria-label="${escapeHtml(colorBtnLabel)}" title="${escapeHtml(colorBtnLabel)}">
+      <button type="button" class="tag-color-btn" data-variant="tertiary" data-action="toggle-tag-color-picker" aria-haspopup="true" aria-expanded="false" aria-label="${escapeHtml(colorBtnLabel)}" title="${escapeHtml(colorBtnLabel)}">
         <span class="${dotIndicatorClass}" ${dotIndicatorStyle}></span>
       </button>
       <div class="tag-color-popover" style="display: none;" role="menu" aria-label="${escapeHtml(colorBtnLabel)}">
@@ -1609,10 +1737,14 @@ const PERSPECTIVE_TEMPLATES = {
 };
 
 function getPerspectiveTemplate(templateId, lang = 'en') {
+  if (!templateId || typeof templateId !== 'string' || !Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, templateId)) {
+    return null;
+  }
   const tpl = PERSPECTIVE_TEMPLATES[templateId];
   if (!tpl) return null;
   const langKey = lang === 'vi' ? 'vi' : 'en';
   const localized = tpl[langKey] || tpl.en;
+  if (!localized) return null;
   return {
     id: tpl.id,
     icon: tpl.icon,
@@ -1620,6 +1752,133 @@ function getPerspectiveTemplate(templateId, lang = 'en') {
     name: localized.name,
     labels: (localized.labels || []).map(l => ({ ...l }))
   };
+}
+
+function isUnmodifiedTemplateLabels(labels, templateId) {
+  if (!templateId || typeof templateId !== 'string' || typeof PERSPECTIVE_TEMPLATES === 'undefined' || !Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, templateId)) {
+    return false;
+  }
+  const tpl = PERSPECTIVE_TEMPLATES[templateId];
+  if (!tpl) return false;
+  const userLabels = normalizeLabels(labels).filter(l => !isFallbackLabel(l.name));
+  if (userLabels.length === 0) return false;
+
+  const enLabels = (tpl.en?.labels || []).filter(l => !isFallbackLabel(l.name));
+  const viLabels = (tpl.vi?.labels || []).filter(l => !isFallbackLabel(l.name));
+
+  const matchesEn = userLabels.length === enLabels.length &&
+    userLabels.every((l, idx) => (l.name || '').toLowerCase().trim() === (enLabels[idx]?.name || '').toLowerCase().trim());
+  const matchesVi = userLabels.length === viLabels.length &&
+    userLabels.every((l, idx) => (l.name || '').toLowerCase().trim() === (viLabels[idx]?.name || '').toLowerCase().trim());
+
+  return matchesEn || matchesVi;
+}
+
+function resolvePerspectiveTemplateKey(p) {
+  if (!p || typeof p !== 'object') return null;
+  if (p.templateId && typeof PERSPECTIVE_TEMPLATES !== 'undefined' && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, p.templateId)) {
+    return p.templateId;
+  }
+  if (p.id && typeof PERSPECTIVE_TEMPLATES !== 'undefined' && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, p.id)) {
+    return p.id;
+  }
+  if (typeof PERSPECTIVE_TEMPLATES !== 'undefined') {
+    for (const key of Object.keys(PERSPECTIVE_TEMPLATES)) {
+      if (!Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, key)) continue;
+      const tpl = PERSPECTIVE_TEMPLATES[key];
+      if (Array.isArray(p.labels) && isUnmodifiedTemplateLabels(p.labels, key)) {
+        return key;
+      }
+      if (p.name && (p.name === tpl.en?.name || p.name === tpl.vi?.name)) {
+        return key;
+      }
+    }
+  }
+  return null;
+}
+
+function getPerspectiveDisplayLabels(p, lang = null) {
+  if (!p || !Array.isArray(p.labels)) return [];
+  const tplKey = resolvePerspectiveTemplateKey(p);
+  const tpl = (tplKey && typeof PERSPECTIVE_TEMPLATES !== 'undefined') ? PERSPECTIVE_TEMPLATES[tplKey] : null;
+
+  if (!tpl || !tpl.en || !tpl.vi) {
+    return p.labels;
+  }
+
+  const activeLang = lang || (typeof TabOutI18n !== 'undefined' && TabOutI18n.getLanguage ? TabOutI18n.getLanguage() : 'en');
+  const enLabels = tpl.en.labels || [];
+  const viLabels = tpl.vi.labels || [];
+  const targetLabels = activeLang === 'vi' ? viLabels : enLabels;
+
+  return p.labels.map(l => {
+    if (!l) return l;
+    const name = getLabelName(l);
+    if (!name) return l;
+
+    if (isFallbackLabel(name)) {
+      return {
+        ...l,
+        name: getFallbackLabelName(activeLang),
+        description: l.description || ''
+      };
+    }
+
+    const norm = name.trim().toLowerCase();
+    for (let i = 0; i < Math.min(enLabels.length, viLabels.length); i++) {
+      const enName = (enLabels[i]?.name || '').trim().toLowerCase();
+      const viName = (viLabels[i]?.name || '').trim().toLowerCase();
+      if (norm === enName || norm === viName) {
+        const matchedTpl = targetLabels[i];
+        if (matchedTpl) {
+          const enDesc = (enLabels[i]?.description || '').trim();
+          const viDesc = (viLabels[i]?.description || '').trim();
+          const currentDesc = (getLabelDesc(l) || '').trim();
+          const isDefaultDesc = !currentDesc || currentDesc === enDesc || currentDesc === viDesc;
+
+          return {
+            ...l,
+            name: matchedTpl.name,
+            description: isDefaultDesc ? (matchedTpl.description || '') : l.description,
+            color: l.color || matchedTpl.color || ''
+          };
+        }
+      }
+    }
+
+    return l;
+  });
+}
+
+function areCategoryLabelsEquivalent(labelA, labelB, activeP = null) {
+  if (!labelA || !labelB) return false;
+  const aNorm = String(labelA).trim().toLowerCase();
+  const bNorm = String(labelB).trim().toLowerCase();
+  if (aNorm === bNorm) return true;
+  if (typeof isFallbackLabel === 'function' && isFallbackLabel(labelA) && isFallbackLabel(labelB)) return true;
+
+  if (typeof PERSPECTIVE_TEMPLATES === 'undefined') return false;
+
+  const targetP = activeP || (typeof currentPerspectives !== 'undefined' && Array.isArray(currentPerspectives) ? currentPerspectives.find(p => p.id === activePerspectiveId) : null);
+  const tplKey = targetP ? resolvePerspectiveTemplateKey(targetP) : null;
+  const templatesToCheck = (tplKey && PERSPECTIVE_TEMPLATES[tplKey])
+    ? [PERSPECTIVE_TEMPLATES[tplKey]]
+    : Object.values(PERSPECTIVE_TEMPLATES);
+
+  for (const tpl of templatesToCheck) {
+    if (!tpl || !tpl.en || !tpl.vi) continue;
+    const enLabels = tpl.en.labels || [];
+    const viLabels = tpl.vi.labels || [];
+
+    for (let i = 0; i < Math.min(enLabels.length, viLabels.length); i++) {
+      const enName = (enLabels[i]?.name || '').trim().toLowerCase();
+      const viName = (viLabels[i]?.name || '').trim().toLowerCase();
+      const isAMatch = aNorm === enName || aNorm === viName;
+      const isBMatch = bNorm === enName || bNorm === viName;
+      if (isAMatch && isBMatch) return true;
+    }
+  }
+  return false;
 }
 
 const CATEGORY_RULES = [
@@ -1683,6 +1942,8 @@ Object.freeze(DEFAULT_PERSPECTIVES);
 
 let currentPerspectives = cloneDefaultPerspectives();
 let activePerspectiveId = 'domain';
+let activeCategoryFilter = null;
+let showEmptyCategoryTags = false;
 let isLocalSettingUpdate = false;
 let localSettingUpdateTimeout = null;
 let pendingSettingsReload = false;
@@ -1726,21 +1987,32 @@ async function loadPerspectiveSettings(force = false) {
   if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
   try {
     const res = await chrome.storage.local.get(['perspectives', 'activePerspectiveId', 'openRouterApiKey', 'classifierApiKey', 'aiAuthBlocked', 'lastBlockedApiKey']);
+    // Only a user switch in flight may override the stored perspective, not the migration lock taken below.
+    const hasPendingLocalSwitch = isLocalSettingUpdate;
     if (res.perspectives && Array.isArray(res.perspectives) && res.perspectives.length > 0) {
       let needsStorageSync = false;
       currentPerspectives = res.perspectives
         .filter(p => p && typeof p === 'object' && p.id && !isDangerousKey(p.id))
         .map(p => {
           let labels = normalizeLabels(p.labels);
+          const inferredTemplateId = resolvePerspectiveTemplateKey(p);
+          const templateId = p.templateId || inferredTemplateId || null;
+          if (!p.templateId && inferredTemplateId) {
+            needsStorageSync = true;
+          }
           if (!p.isSystem && labels.length > 0) {
             const userLabels = labels.filter(l => !isFallbackLabel(l.name));
-            if (!labels.some(l => isFallbackLabel(l.name)) || labels.some(l => isFallbackLabel(l.name) && l.name !== 'Khác')) {
+            const existingFallback = labels.find(l => isFallbackLabel(l.name));
+            const activeLang = typeof TabOutI18n !== 'undefined' ? TabOutI18n.getLanguage() : 'en';
+            const fallbackName = existingFallback ? existingFallback.name : getFallbackLabelName(activeLang);
+            if (!labels.some(l => isFallbackLabel(l.name))) {
               needsStorageSync = true;
             }
-            labels = [...userLabels, { name: 'Khác', description: '', color: '' }];
+            labels = [...userLabels, { name: fallbackName, description: '', color: '' }];
           }
           return {
             ...p,
+            templateId,
             labels
           };
         });
@@ -1749,7 +2021,7 @@ async function loadPerspectiveSettings(force = false) {
         enqueueStorageWrite(() => chrome.storage.local.set({ perspectives: currentPerspectives })).catch(() => {});
       }
     }
-    if (res.activePerspectiveId && !isLocalSettingUpdate && !isDangerousKey(res.activePerspectiveId) && currentPerspectives.some(p => p.id === res.activePerspectiveId)) {
+    if (res.activePerspectiveId && !hasPendingLocalSwitch && !isDangerousKey(res.activePerspectiveId) && currentPerspectives.some(p => p.id === res.activePerspectiveId)) {
       activePerspectiveId = res.activePerspectiveId;
     } else if (!currentPerspectives.some(p => p.id === activePerspectiveId)) {
       activePerspectiveId = 'domain';
@@ -1779,44 +2051,39 @@ async function loadPerspectiveSettings(force = false) {
     if (!isJevActive() && activePerspectiveId !== 'domain') {
       activePerspectiveId = 'domain';
     }
+    // Only the visible perspective's partition is read; others load on demand when switched to.
     tabClassificationCache = {};
-    // Load partitioned perspective caches, lazily falling back to monolithic cache only if partition missing
-    if (currentPerspectives && Array.isArray(currentPerspectives)) {
-      const partKeys = currentPerspectives.map(p => `tabClassificationCache_${p.id}`);
-      const partRes = await chrome.storage.local.get(partKeys);
-      let fallbackMonolithic = null;
-      for (const p of currentPerspectives) {
-        if (!p || !p.id || isDangerousKey(p.id)) continue;
-        const pKey = `tabClassificationCache_${p.id}`;
-        let rawPartition = null;
-        if (partRes[pKey] && typeof partRes[pKey] === 'object' && !Array.isArray(partRes[pKey])) {
-          rawPartition = partRes[pKey];
-        } else {
-          if (!fallbackMonolithic) {
-            const monoRes = await chrome.storage.local.get(['tabClassificationCache']);
-            fallbackMonolithic = (monoRes && typeof monoRes.tabClassificationCache === 'object' && !Array.isArray(monoRes.tabClassificationCache)) ? monoRes.tabClassificationCache : {};
-          }
-          if (fallbackMonolithic && typeof fallbackMonolithic[p.id] === 'object' && !Array.isArray(fallbackMonolithic[p.id])) {
-            rawPartition = fallbackMonolithic[p.id];
-          }
-        }
-        const cleanPartition = {};
-        if (rawPartition) {
-          for (const [k, v] of Object.entries(rawPartition)) {
-            if (!isDangerousKey(k) && v && typeof v === 'object' && !Array.isArray(v)) {
-              cleanPartition[k] = v;
-            }
-          }
-        }
-        tabClassificationCache[p.id] = cleanPartition;
-      }
-    }
+    await ensureClassificationPartition(activePerspectiveId);
     isPerspectivesLoaded = true;
 
     // Update telemetry dot in sidebar rail
     updatePerspectiveTelemetry();
   } catch (err) {
     console.warn('[tab-out] Failed to load perspective settings:', err);
+  }
+}
+
+/**
+ * ensureClassificationPartition(pid)
+ *
+ * Reads one perspective's classification partition into memory if it is not there yet.
+ */
+async function ensureClassificationPartition(pid) {
+  if (!pid || pid === 'domain' || isDangerousKey(pid)) return;
+  if (Object.prototype.hasOwnProperty.call(tabClassificationCache, pid)) return;
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+  const pKey = `tabClassificationCache_${pid}`;
+  const res = await chrome.storage.local.get([pKey]);
+  const raw = res[pKey];
+  const clean = {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw)) {
+      if (!isDangerousKey(k) && v && typeof v === 'object' && !Array.isArray(v)) clean[k] = v;
+    }
+  }
+  // A storage broadcast or save may have filled it (with fresher data) while we were reading.
+  if (!Object.prototype.hasOwnProperty.call(tabClassificationCache, pid)) {
+    tabClassificationCache[pid] = clean;
   }
 }
 
@@ -2117,21 +2384,23 @@ function stripUrlQueryParams(url) {
 }
 
 /**
- * pruneClassificationCache(cache, maxEntries)
+ * pruneClassificationCache(cache, maxEntries, keepKeys)
  *
  * True LRU bounds: sorts by entry timestamp descending (newest first) before keeping maxEntries.
+ * Entries for keepKeys (open tabs) always go first, so their answers are never evicted.
  */
-function pruneClassificationCache(cache, maxEntries = 1000) {
+function pruneClassificationCache(cache, maxEntries = 1000, keepKeys = []) {
   if (!cache || typeof cache !== 'object') return {};
   const keys = Object.keys(cache);
   if (keys.length <= maxEntries) return cache;
   const entries = Object.entries(cache);
+  const keep = new Set(keepKeys);
   const hasTimestamps = entries.some(e => e[1] && typeof e[1] === 'object' && typeof e[1].timestamp === 'number');
   if (hasTimestamps) {
     entries.sort((a, b) => {
       const timeA = (a[1] && typeof a[1] === 'object' && a[1].timestamp) || 0;
       const timeB = (b[1] && typeof b[1] === 'object' && b[1].timestamp) || 0;
-      return timeB - timeA;
+      return (keep.has(b[0]) - keep.has(a[0])) || timeB - timeA;
     });
     return Object.fromEntries(entries.slice(0, maxEntries));
   }
@@ -2144,152 +2413,6 @@ function enqueueStorageWrite(fn) {
   const next = storageWriteMutex.then(fn, fn);
   storageWriteMutex = next;
   return next;
-}
-
-/**
- * saveClassificationCacheAtomic(pid, newEntries)
- *
- * Performs serialized atomic read-modify-write against chrome.storage.local to eliminate
- * last-write-wins clobbering races between parallel batches and the background service worker.
- */
-async function saveClassificationCacheAtomic(pid, newEntries) {
-  if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
-  return enqueueStorageWrite(async () => {
-    try {
-      if (isDangerousKey(pid)) return;
-      if (isPerspectivesLoaded && Array.isArray(currentPerspectives) && currentPerspectives.length > 0 && !currentPerspectives.some(p => p.id === pid)) {
-        return;
-      }
-      const partitionKey = `tabClassificationCache_${pid}`;
-      const res = await chrome.storage.local.get([partitionKey, 'perspectives']);
-      let validPerspectivesList = Array.isArray(res.perspectives) && res.perspectives.length > 0
-        ? res.perspectives.filter(p => p && p.id && !isDangerousKey(p.id))
-        : (isPerspectivesLoaded && Array.isArray(currentPerspectives) && currentPerspectives.length > 0 ? currentPerspectives.filter(p => p && p.id && !isDangerousKey(p.id)) : null);
-
-      if (validPerspectivesList && !validPerspectivesList.some(p => p.id === pid)) {
-        return;
-      }
-      let partitionCache = res[partitionKey];
-      if (!partitionCache || typeof partitionCache !== 'object' || Array.isArray(partitionCache)) {
-        const fallbackRes = await chrome.storage.local.get(['tabClassificationCache']);
-        const fb = fallbackRes.tabClassificationCache?.[pid];
-        partitionCache = (fb && typeof fb === 'object' && !Array.isArray(fb)) ? { ...fb } : {};
-      } else {
-        partitionCache = { ...partitionCache };
-      }
-      const initialDiskKeys = new Set(Object.keys(partitionCache));
-
-      let hasChanges = false;
-      if (newEntries && typeof newEntries === 'object') {
-        for (const [urlKey, entry] of Object.entries(newEntries)) {
-          if (isDangerousKey(urlKey)) continue;
-          const existing = partitionCache[urlKey];
-          // A completed AI decision must not be replaced by a stale local placeholder.
-          if (existing && ['ai', 'ai-low-confidence'].includes(getCacheSource(existing)) &&
-              !['ai', 'ai-low-confidence'].includes(getCacheSource(entry))) {
-            continue;
-          }
-          // A completed high-confidence AI decision must not be downgraded to low confidence.
-          if (existing && getCacheSource(existing) === 'ai' && getCacheSource(entry) === 'ai-low-confidence') {
-            continue;
-          }
-          // If both are 'ai' and existing has higher confidence, preserve higher confidence
-          if (existing && getCacheSource(existing) === 'ai' && getCacheSource(entry) === 'ai' &&
-              typeof existing?.confidence === 'number' && typeof entry?.confidence === 'number' &&
-              entry.confidence < existing.confidence) {
-            continue;
-          }
-
-          const normalizedEntry = typeof entry === 'string'
-            ? { label: entry, source: 'ai', timestamp: Date.now() }
-            : (entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {});
-
-          // Skip redundant write if identical
-          if (existing &&
-              existing.label === normalizedEntry.label &&
-              existing.source === normalizedEntry.source &&
-              existing.confidence === normalizedEntry.confidence &&
-              existing.secondaryLabel === normalizedEntry.secondaryLabel) {
-            continue;
-          }
-
-          partitionCache[urlKey] = {
-            ...(existing && typeof existing === 'object' && !Array.isArray(existing) ? existing : {}),
-            ...normalizedEntry,
-            secondaryLabel: normalizedEntry.secondaryLabel !== undefined ? normalizedEntry.secondaryLabel : existing?.secondaryLabel
-          };
-          hasChanges = true;
-        }
-      }
-
-      const prePruneCount = Object.keys(partitionCache).length;
-      partitionCache = pruneClassificationCache(partitionCache, 1000);
-      if (Object.keys(partitionCache).length !== prePruneCount) {
-        hasChanges = true;
-      }
-
-      // Keep RAM copy in sync using a fresh object clone to eliminate memory leaks
-      tabClassificationCache[pid] = { ...partitionCache };
-
-      if (!hasChanges) {
-        return;
-      }
-
-      // Delta merge: Reload fresh storage to avoid clobbering any concurrent entries written by background service worker
-      try {
-        const freshCheck = await chrome.storage.local.get(['perspectives', partitionKey]);
-        if (Array.isArray(freshCheck.perspectives)) {
-          const freshValidIds = new Set(
-            freshCheck.perspectives
-              .filter(p => p && typeof p === 'object' && p.id && !isDangerousKey(p.id))
-              .map(p => p.id)
-          );
-          if (!freshValidIds.has(pid)) {
-            // Perspective was deleted while this batch was processing - abort writing orphan partition
-            delete tabClassificationCache[pid];
-            return;
-          }
-        }
-        const freshDisk = freshCheck[partitionKey];
-        if (freshDisk && typeof freshDisk === 'object' && !Array.isArray(freshDisk)) {
-          for (const [k, v] of Object.entries(freshDisk)) {
-            if (isDangerousKey(k)) continue;
-            const current = partitionCache[k];
-            if (!current) {
-              // Only adopt if this key is newly added by another process concurrently,
-              // NOT an old key that we intentionally pruned!
-              if (!initialDiskKeys.has(k)) {
-                partitionCache[k] = v;
-              }
-            } else {
-              // Precedence check: if disk has AI decision and current RAM entry is local or lower confidence, upgrade to disk entry!
-              const currentSrc = getCacheSource(current);
-              const diskSrc = getCacheSource(v);
-              if (['ai', 'ai-low-confidence'].includes(diskSrc) && !['ai', 'ai-low-confidence'].includes(currentSrc)) {
-                partitionCache[k] = v;
-              } else if (diskSrc === 'ai' && currentSrc === 'ai-low-confidence') {
-                partitionCache[k] = v;
-              } else if (diskSrc === 'ai' && currentSrc === 'ai' && typeof v?.confidence === 'number' && typeof current?.confidence === 'number' && v.confidence > current.confidence) {
-                partitionCache[k] = v;
-              }
-            }
-          }
-          if (Object.keys(partitionCache).length > 1000) {
-            partitionCache = pruneClassificationCache(partitionCache, 1000);
-          }
-        }
-      } catch {}
-
-      // Keep in-memory RAM cache in sync after delta-merge and pruning
-      tabClassificationCache[pid] = { ...partitionCache };
-
-      await chrome.storage.local.set({
-        [partitionKey]: partitionCache
-      });
-    } catch (err) {
-      console.warn('[tab-out] Failed to atomically save classification cache:', err);
-    }
-  });
 }
 
 /**
@@ -2349,59 +2472,105 @@ function getCacheSource(entry) {
   return 'local';
 }
 
-/**
- * getDomainFallbackLabel(tab, cache)
- *
- * Checks if another tab from the exact same domain already has an 'ai' classified label in cache.
- * Excludes multi-topic domains to prevent semantic cross-contamination.
- * Uses fast string hostname extraction instead of repeatedly allocating new URL().
- */
-function getDomainFallbackLabel(tab, cache) {
-  if (!tab || !tab.url || !cache) return null;
-  const hostname = extractHostname(tab.url);
-  if (!hostname || MULTI_TOPIC_DOMAINS.has(hostname)) return null;
-
-  for (const [cachedUrl, entry] of Object.entries(cache)) {
-    if (getCacheSource(entry) === 'ai') {
-      const cachedHost = extractHostname(cachedUrl);
-      if (cachedHost === hostname) {
-        const label = getCacheLabel(entry);
-        if (label) return label;
-      }
-    }
-  }
-  return null;
-}
 
 const inFlightUrls = new Set();
+const AI_SOURCES = ['ai', 'ai-low-confidence'];
+// Jev is rate-limited or down until this time, as last reported by the service worker.
+let jevBlockedUntil = 0;
 
-async function claimAiKeys(keys, owner) {
-  if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return keys;
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'tabout-ai-claim', keys, owner });
-    return Array.isArray(response?.claimed) ? response.claimed : [];
-  } catch {
-    return keys; // No worker is available to make a competing request.
-  }
+// A loading tab still carries the previous page's title; classify it once it reaches 'complete'.
+function isTabReadyForAi(tab) {
+  return Boolean(tab) && !tab.incognito && tab.status !== 'loading' && isAiEligibleUrl(tab.url);
 }
 
-async function releaseAiKeys(keys, owner) {
-  if (!keys.length || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) return;
-  try { await chrome.runtime.sendMessage({ type: 'tabout-ai-release', keys, owner }); } catch {}
+// A tab needs Jev unless it already has an AI answer or is cooling down after a failed attempt.
+function needsJev(entry, now = Date.now()) {
+  if (!entry) return true;
+  if (AI_SOURCES.includes(getCacheSource(entry))) return false;
+  return !(entry.lastAiAttempt && now - entry.lastAiAttempt < (entry.cooldownMs || 15000));
 }
-
 
 /**
- * classifyTabs(tabs, perspective, forceAi)
+ * mergeClassificationEntries(pid, entries)
  *
- * Fast classification engine for open tabs.
- * 1. Resolves known and local fallback categories immediately into memory.
- * 2. If OpenRouter API key is configured, batches uncached/heuristic tabs into unified
- *    multi-question OpenRouter decisions requests (~typesafe/jev-latest).
+ * Merges stored classification entries into the in-memory cache without ever downgrading
+ * an AI answer. Returns the keys whose label changed.
  */
-let activeClassificationAbortController = null;
+function mergeClassificationEntries(pid, entries) {
+  const changedKeys = [];
+  if (!pid || isDangerousKey(pid) || !entries || typeof entries !== 'object' || Array.isArray(entries)) return changedKeys;
+  if (!tabClassificationCache[pid]) tabClassificationCache[pid] = {};
+  const target = tabClassificationCache[pid];
 
-async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
+  for (const [urlKey, entry] of Object.entries(entries)) {
+    if (isDangerousKey(urlKey)) continue;
+    const prev = target[urlKey];
+    const prevSource = getCacheSource(prev);
+    const newSource = getCacheSource(entry);
+
+    // Never overwrite completed AI decisions ('ai' or 'ai-low-confidence') with non-AI placeholders
+    if (AI_SOURCES.includes(prevSource) && !AI_SOURCES.includes(newSource)) continue;
+
+    // Never downgrade a high-confidence AI decision to low confidence
+    if (prevSource === 'ai' && newSource === 'ai-low-confidence') continue;
+
+    // If both are 'ai', keep higher confidence if existing has better confidence
+    if (prevSource === 'ai' && newSource === 'ai' &&
+        typeof prev?.confidence === 'number' && typeof entry?.confidence === 'number' &&
+        entry.confidence < prev.confidence) {
+      continue;
+    }
+
+    const prevLabel = getCacheLabel(prev);
+    const newLabel = getCacheLabel(entry);
+
+    // Never downgrade a valid non-fallback label to a fallback label via a non-AI placeholder update,
+    // but still take the failure bookkeeping so this tab's retry cooldown is honoured here too.
+    if (prevLabel && !isFallbackLabel(prevLabel) && isFallbackLabel(newLabel) && !AI_SOURCES.includes(newSource)) {
+      if (entry?.lastAiAttempt && prev && typeof prev === 'object') {
+        target[urlKey] = { ...prev, lastAiAttempt: entry.lastAiAttempt, cooldownMs: entry.cooldownMs, aiAttempts: entry.aiAttempts };
+      }
+      continue;
+    }
+
+    const normalizedEntry = typeof entry === 'string'
+      ? { label: entry, source: 'ai', timestamp: Date.now() }
+      : (entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {});
+
+    // Avoid allocating new objects and triggering GC churn if entry is identical to prev
+    if (prev &&
+        prev.label === normalizedEntry.label &&
+        prev.source === normalizedEntry.source &&
+        prev.confidence === normalizedEntry.confidence &&
+        prev.timestamp === normalizedEntry.timestamp &&
+        prev.secondaryLabel === normalizedEntry.secondaryLabel) {
+      continue;
+    }
+
+    target[urlKey] = {
+      ...(prev && typeof prev === 'object' && !Array.isArray(prev) ? prev : {}),
+      ...normalizedEntry,
+      secondaryLabel: normalizedEntry.secondaryLabel !== undefined ? normalizedEntry.secondaryLabel : prev?.secondaryLabel
+    };
+    if (newLabel && newLabel !== prevLabel) changedKeys.push(urlKey);
+  }
+
+  if (Object.keys(target).length > 1000) {
+    const openKeys = getRealTabs().map(t => normalizeUrlForCache(t.url) || t.url || '');
+    tabClassificationCache[pid] = pruneClassificationCache(target, 1000, openKeys);
+  }
+  return changedKeys;
+}
+
+/**
+ * classifyTabs(tabs, perspective, options)
+ *
+ * Hands the tabs that still need a Jev answer to the service worker, which sends the requests
+ * and stores the answers even if this dashboard is closed meanwhile. The entries it returns are
+ * merged into memory so the dashboard can re-render at once. Incognito tabs never leave the
+ * browser: they are classified locally, in memory only.
+ */
+async function classifyTabs(tabs, perspective, options = {}) {
   if (!isJevActive() && typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
     try {
       const stored = await chrome.storage.local.get(['openRouterApiKey', 'classifierApiKey', 'aiAuthBlocked']);
@@ -2428,25 +2597,7 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
   }
   const cache = tabClassificationCache[pid];
 
-  // 1. Identify which tabs genuinely need AI decision pass BEFORE mutating cache (never send incognito tabs to cloud AI)
-  const toClassify = (forceAi
-    ? tabs.filter(t => !t?.incognito && isAiEligibleUrl(t?.url))
-    : tabs.filter(t => {
-        if (t?.incognito || !isAiEligibleUrl(t?.url)) return false;
-        const normUrl = normalizeUrlForCache(t.url) || t.url || '';
-        if (!normUrl) return false;
-        const entry = cache[normUrl];
-        if (!entry) return true;
-        if (['ai', 'ai-low-confidence'].includes(getCacheSource(entry))) return false;
-        const isFailedRecently = entry.lastAiAttempt && (Date.now() - entry.lastAiAttempt < (entry.cooldownMs || 15000));
-        return !isFailedRecently;
-      })
-  ).filter(t => {
-    const normUrl = normalizeUrlForCache(t.url) || t.url || '';
-    return normUrl && !inFlightUrls.has(`${pid}:${normUrl}`);
-  });
-
-  // 2. For incognito tabs only, classify locally in-memory to preserve privacy without sending to cloud AI
+  // Incognito tabs are classified locally in memory to preserve privacy without sending them to cloud AI
   for (const tab of tabs) {
     const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
     if (!normUrl || isDangerousKey(normUrl)) continue;
@@ -2456,33 +2607,33 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
     }
   }
 
-  // Mark pending URLs as in-flight immediately so concurrent calls never double-fetch or race during await
+  if (Date.now() < jevBlockedUntil || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+    return cache;
+  }
+
+  const now = Date.now();
+  const items = [];
   const pendingKeys = [];
-  const reservationOwner = `dashboard-${Date.now()}-${Math.random()}`;
-  const reservedKeys = new Set();
-  for (const t of toClassify) {
-    const normUrl = normalizeUrlForCache(t.url) || t.url || '';
-    if (normUrl) {
-      const key = `${pid}:${normUrl}`;
-      inFlightUrls.add(key);
-      pendingKeys.push(key);
-    }
+  for (const t of tabs) {
+    if (!isTabReadyForAi(t)) continue;
+    const key = normalizeUrlForCache(t.url) || t.url || '';
+    const flightKey = `${pid}:${key}`;
+    // The worker refuses keys longer than it can store; asking would only repeat on every render.
+    if (!key || key.length > 2048 || isDangerousKey(key) || inFlightUrls.has(flightKey) || !needsJev(cache[key], now)) continue;
+    inFlightUrls.add(flightKey);
+    pendingKeys.push(flightKey);
+    items.push({
+      key,
+      // Lets the worker skip a tab that is closed or navigated away by the time its batch goes out.
+      tabId: t.id,
+      tabUrl: t.url,
+      title: stripTitleNoise(t.title || '').replace(/[\r\n]+/g, ' ').slice(0, 140),
+      url: stripUrlQueryParams(key).slice(0, 300),
+      domain: extractHostname(t.url),
+      fallbackLabel: localFallbackClassify(t, perspective.labels)
+    });
   }
-
-  // If Jev is not active (no OpenRouter key or auth blocked) or no tabs need AI, return cache immediately
-  if (!isJevActive() || toClassify.length === 0) {
-    for (const key of pendingKeys) inFlightUrls.delete(key);
-    return tabClassificationCache[pid] || cache;
-  }
-
-  let activeSignal = null;
-  if (!silent && typeof AbortController !== 'undefined') {
-    if (activeClassificationAbortController) {
-      try { activeClassificationAbortController.abort(); } catch {}
-    }
-    activeClassificationAbortController = new AbortController();
-    activeSignal = activeClassificationAbortController.signal;
-  }
+  if (!items.length) return cache;
 
   const loader = (!silent && typeof document !== 'undefined') ? document.getElementById('perspectiveLoader') : null;
   const dot = (!silent && typeof document !== 'undefined') ? document.querySelector('.telemetry-dot') : null;
@@ -2493,254 +2644,23 @@ async function classifyTabs(tabs, perspective, forceAi = false, options = {}) {
   }
 
   try {
-    // Deduplicate unique tab URLs
-    const uniqueTabsMap = new Map();
-    for (const t of toClassify) {
-      const normUrl = normalizeUrlForCache(t.url) || t.url || '';
-      if (normUrl && !uniqueTabsMap.has(normUrl)) {
-        uniqueTabsMap.set(normUrl, t);
-      }
-    }
-    const uniqueTabs = Array.from(uniqueTabsMap.values());
-
-    // Build criteria options for OpenRouter typesafe decision choice
-    const criteria = buildChoiceCriteria(perspective);
-
-    // Strict On-Demand: Only classify tabs for the requested perspective (zero token waste)
-
-    // Bound each request while sharing its state and criteria across tabs.
-    const batchSize = 24;
-    const batches = [];
-    for (let i = 0; i < uniqueTabs.length; i += batchSize) {
-      batches.push(uniqueTabs.slice(i, i + batchSize));
-    }
-
-    // Send batches sequentially to avoid bursts against the Decisions endpoint.
-    const maxConcurrency = 1;
-    for (let b = 0; b < batches.length; b += maxConcurrency) {
-      if (aiAuthBlocked || activeSignal?.aborted) break;
-      const chunk = batches.slice(b, b + maxConcurrency);
-      await Promise.all(chunk.map(async (candidateBatch) => {
-        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-          try {
-            const partitionKey = `tabClassificationCache_${pid}`;
-            const res = await chrome.storage.local.get([partitionKey]);
-            let latest = res[partitionKey];
-            if (!latest) {
-              const fallbackRes = await chrome.storage.local.get(['tabClassificationCache']);
-              latest = fallbackRes.tabClassificationCache?.[pid];
-            }
-            if (latest && typeof latest === 'object' && !Array.isArray(latest)) {
-              for (const [k, v] of Object.entries(latest)) {
-                if (!isDangerousKey(k) && v && typeof v === 'object' && !Array.isArray(v)) {
-                  tabClassificationCache[pid][k] = v;
-                }
-              }
-            }
-          } catch {}
-        }
-
-        const activeBatch = candidateBatch.filter(tab => {
-          const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
-          const entry = tabClassificationCache[pid]?.[normUrl];
-          return !entry || !['ai', 'ai-low-confidence'].includes(getCacheSource(entry));
-        });
-        if (!activeBatch.length) return;
-
-        const candidateKeys = activeBatch.map(tab => {
-          const url = normalizeUrlForCache(tab.url) || tab.url || '';
-          return `${pid}:${url}`;
-        });
-        const claimedKeys = await claimAiKeys([...new Set(candidateKeys)], reservationOwner);
-        const claimed = new Set(claimedKeys);
-        for (const key of claimedKeys) {
-          reservedKeys.add(key);
-          inFlightUrls.add(key);
-        }
-        const batch = activeBatch.filter(tab => claimed.has(`${pid}:${normalizeUrlForCache(tab.url) || tab.url || ''}`));
-        if (!batch.length) {
-          await releaseAiKeys(claimedKeys, reservationOwner);
-          for (const key of claimedKeys) {
-            inFlightUrls.delete(key);
-            reservedKeys.delete(key);
-          }
-          return;
-        }
-        const questions = {};
-        const state = { tabs: {} };
-        const batchUpdates = {};
-
-        batch.forEach((tab, idx) => {
-          const qKey = `tab_${idx}`;
-          const cleanUrl = normalizeUrlForCache(tab.url) || tab.url || '';
-          const cleanTitle = stripTitleNoise(tab.title || '').replace(/[\r\n]+/g, ' ').slice(0, 140);
-          const domain = extractHostname(tab.url);
-          state.tabs[qKey] = {
-            title: cleanTitle,
-            url: stripUrlQueryParams(cleanUrl).slice(0, 300),
-            domain
-          };
-          questions[qKey] = {
-            type: 'choice',
-            instructions: `Categorize \`tabs.${qKey}\` into the single most fitting category based on title, domain, and criteria.`,
-            criteria
-          };
-        });
-
-        let perRequestSignal;
-        if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
-          const timeoutSignal = AbortSignal.timeout(10000);
-          perRequestSignal = (activeSignal && typeof AbortSignal.any === 'function')
-            ? AbortSignal.any([timeoutSignal, activeSignal])
-            : timeoutSignal;
-        } else {
-          perRequestSignal = activeSignal || undefined;
-        }
-
-        try {
-          const requestKey = (openRouterApiKey || '').trim().replace(/[^\x21-\x7E]/g, '');
-          const response = await fetch('https://openrouter.ai/api/alpha/decisions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${requestKey}`,
-              'HTTP-Referer': 'https://github.com/Gohans1/tab-out',
-              'X-Title': 'Tab Out'
-            },
-            signal: perRequestSignal,
-            body: JSON.stringify({
-              model: '~typesafe/jev-latest',
-              state,
-              questions
-            })
-          });
-
-          if (!response.ok) {
-            let cooldownMs = 15000;
-            const retryAfter = Number(response.headers?.get?.('retry-after'));
-            if (!isNaN(retryAfter) && retryAfter > 0) {
-              cooldownMs = Math.min(Math.max(retryAfter * 1000, 5000), 300000);
-            } else if (response.status === 401 || response.status === 403 || response.status === 429 || response.status === 529) {
-              cooldownMs = 60000;
-            } else if (response.status === 400 || response.status === 402 || response.status === 422) {
-              cooldownMs = 300000;
-            }
-            if (response.status === 401 || response.status === 402 || response.status === 403) {
-              const latest = await chrome.storage.local.get(['openRouterApiKey', 'classifierApiKey']);
-              const rawKey = latest?.openRouterApiKey || latest?.classifierApiKey || '';
-              const sanitizedLatest = rawKey.trim().replace(/[^\x21-\x7E]/g, '');
-              const sanitizedRequest = (requestKey || '').trim().replace(/[^\x21-\x7E]/g, '');
-              if (sanitizedLatest === sanitizedRequest || (!sanitizedLatest && sanitizedRequest)) {
-                aiAuthBlocked = true;
-                await chrome.storage.local.set({ aiAuthBlocked: true, lastBlockedApiKey: sanitizedRequest });
-              }
-            }
-            const httpErr = new Error(`OpenRouter decisions HTTP ${response.status}`);
-            httpErr.cooldownMs = cooldownMs;
-            throw httpErr;
-          }
-
-          const data = await response.json();
-          const answers = (data && typeof data === 'object') ? (data.answers || {}) : {};
-
-          batch.forEach((tab, idx) => {
-            const qKey = `tab_${idx}`;
-            const ans = answers[qKey] || answers[`${pid}__${qKey}`];
-            const choice = ans?.choice;
-            const confidence = typeof ans?.confidence === 'number' ? ans.confidence : 1.0;
-            const isHighConfidence = confidence >= 0.45;
-            const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
-            if (!normUrl || isDangerousKey(normUrl)) return;
-
-
-            // Robust case-insensitive and trimmed match for returned choice
-            const validActiveKeys = Object.keys(criteria);
-            const matchedLabel = choice
-              ? validActiveKeys.find(l => l.trim().toLowerCase() === String(choice).trim().toLowerCase())
-              : null;
-
-            let secondaryLabel = null;
-            if (ans?.probabilities && typeof ans.probabilities === 'object') {
-              const sorted = Object.entries(ans.probabilities)
-                .filter(([k]) => k.trim().toLowerCase() !== String(choice).trim().toLowerCase())
-                .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0));
-              if (sorted[0] && Number(sorted[0][1]) >= 0.20) {
-                const validOther = validActiveKeys.find(l => l.trim().toLowerCase() === String(sorted[0][0]).trim().toLowerCase());
-                if (validOther) secondaryLabel = validOther;
-              }
-            }
-
-            if (matchedLabel) {
-              cache[normUrl] = {
-                label: matchedLabel,
-                secondaryLabel: secondaryLabel || undefined,
-
-                source: isHighConfidence ? 'ai' : 'ai-low-confidence',
-                confidence,
-                cooldownMs: isHighConfidence ? undefined : 60000,
-                lastAiAttempt: isHighConfidence ? undefined : Date.now(),
-                timestamp: Date.now()
-              };
-              batchUpdates[normUrl] = cache[normUrl];
-            } else if (!cache[normUrl] || !['ai', 'ai-low-confidence'].includes(getCacheSource(cache[normUrl]))) {
-              const fallback = localFallbackClassify(tab, perspective.labels);
-              cache[normUrl] = {
-                label: fallback,
-                source: 'local',
-                cooldownMs: 15000,
-                lastAiAttempt: Date.now(),
-                timestamp: Date.now()
-              };
-              batchUpdates[normUrl] = cache[normUrl];
-            }
-          });
-        } catch (batchErr) {
-          // If aborted by user switching perspectives, do not penalize tabs with cooldown!
-          if (batchErr?.name === 'AbortError' || activeSignal?.aborted) {
-            return;
-          }
-          console.warn('[tab-out] Jev batch request fallback:', batchErr);
-          const cooldownMs = (batchErr && batchErr.cooldownMs) ? batchErr.cooldownMs : 15000;
-          batch.forEach(tab => {
-            const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
-            if (normUrl && !isDangerousKey(normUrl) && (!cache[normUrl] || !['ai', 'ai-low-confidence'].includes(getCacheSource(cache[normUrl])))) {
-              const fallback = (aiAuthBlocked || !isJevActive())
-                ? ((perspective.labels || []).find(l => isFallbackLabel(getLabelName(l)))?.name || 'Khác')
-                : localFallbackClassify(tab, perspective.labels);
-              cache[normUrl] = {
-                label: fallback,
-                source: 'local',
-                cooldownMs,
-                lastAiAttempt: Date.now(),
-                timestamp: Date.now()
-              };
-              batchUpdates[normUrl] = cache[normUrl];
-            }
-          });
-        }
-        if (Object.keys(batchUpdates).length) await saveClassificationCacheAtomic(pid, batchUpdates);
-        await releaseAiKeys(claimedKeys, reservationOwner);
-        for (const key of claimedKeys) {
-          inFlightUrls.delete(key);
-          reservedKeys.delete(key);
-        }
-      }));
-    }
-
+    const response = await chrome.runtime.sendMessage({
+      type: 'tabout-jev-classify',
+      pid,
+      apiKey: openRouterApiKey,
+      criteria: buildChoiceCriteria(perspective),
+      otherLabel: perspective.labels.map(getLabelName).find(isFallbackLabel) || getFallbackLabelName(),
+      items,
+      // Open tabs' answers must survive the worker's cache pruning, or they would be paid for again.
+      keepKeys: getRealTabs().map(t => normalizeUrlForCache(t.url) || t.url || '').filter(Boolean)
+    });
+    if (Number(response?.blockedUntil) > 0) jevBlockedUntil = Number(response.blockedUntil);
+    mergeClassificationEntries(pid, response?.entries);
   } catch (err) {
-    if (err?.name === 'AbortError' || activeSignal?.aborted) {
-      return cache;
-    }
-    console.warn('[tab-out] OpenRouter ~typesafe/jev-latest request fell back to local classifier:', err);
+    // The service worker restarted mid-job; the next sync asks again.
+    console.warn('[tab-out] Jev classification did not complete:', err);
   } finally {
-    const remainingReserved = Array.from(reservedKeys);
-    if (remainingReserved.length) {
-      await releaseAiKeys(remainingReserved, reservationOwner);
-    }
     for (const key of pendingKeys) {
-      inFlightUrls.delete(key);
-    }
-    for (const key of reservedKeys) {
       inFlightUrls.delete(key);
     }
     const hasActiveInFlight = Array.from(inFlightUrls).some(k => k.startsWith(`${activePerspectiveId}:`));
@@ -2790,7 +2710,7 @@ function triggerBackgroundClassification(tabs, perspective) {
         prevLabels.set(norm, getCacheLabel(cacheBefore[norm]));
       }
 
-      await classifyTabs(tabs, perspective, false, { silent: false });
+      await classifyTabs(tabs, perspective, { silent: false });
 
       // Only re-render if user is still on this perspective AND at least one label actually changed!
       if (activePerspectiveId === pid) {
@@ -2812,29 +2732,14 @@ function triggerBackgroundClassification(tabs, perspective) {
       console.warn('[tab-out] Background classification error:', err);
     } finally {
       isBackgroundClassifying = false;
-      if (pendingClassificationRequest) {
-        const next = pendingClassificationRequest;
-        pendingClassificationRequest = null;
+      const next = pendingClassificationRequest;
+      pendingClassificationRequest = null;
+      // Strict on-demand: a queued run for a perspective the user has since left is dropped.
+      if (next && next.perspective?.id === activePerspectiveId) {
         triggerBackgroundClassification(next.tabs, next.perspective);
       }
     }
   })();
-}
-
-/**
- * prewarmMultiPerspective()
- * Deprecated: Strict on-demand architecture replaces speculative prewarming to eliminate token waste.
- */
-async function prewarmMultiPerspective() {
-  return;
-}
-
-/**
- * schedulePerspectivePrewarm()
- * Deprecated: Strict on-demand architecture replaces speculative hover prewarming to eliminate token waste.
- */
-function schedulePerspectivePrewarm() {
-  return;
 }
 
 /**
@@ -2859,7 +2764,8 @@ function renderPerspectiveTagsBar(groupsOverride = null) {
     return;
   }
 
-  const normalizedLabels = normalizeLabels(activeP.labels);
+  const displayLabels = getPerspectiveDisplayLabels(activeP);
+  const normalizedLabels = normalizeLabels(displayLabels);
   if (normalizedLabels.length === 0) {
     barEl.style.display = 'none';
     barEl.innerHTML = '';
@@ -2869,14 +2775,17 @@ function renderPerspectiveTagsBar(groupsOverride = null) {
 
   // Count open tabs per category (prefer in-memory groups if provided to avoid layout thrashing)
   const categoryCounts = Object.create(null);
+  const rawCategoryNames = Object.create(null);
   let cardCount = 0;
   if (Array.isArray(groupsOverride)) {
     cardCount = groupsOverride.length;
     for (const group of groupsOverride) {
       const cat = group.label || group.domain;
       if (cat) {
+        const lower = cat.toLowerCase().trim();
         const count = Array.isArray(group.tabs) ? group.tabs.length : 0;
-        categoryCounts[cat] = (categoryCounts[cat] || 0) + count;
+        categoryCounts[lower] = (categoryCounts[lower] || 0) + count;
+        if (!rawCategoryNames[lower]) rawCategoryNames[lower] = cat;
       }
     }
   } else {
@@ -2888,6 +2797,7 @@ function renderPerspectiveTagsBar(groupsOverride = null) {
         cards.forEach(card => {
           const cat = card.dataset?.category;
           if (cat) {
+            const lower = cat.toLowerCase().trim();
             const tabChips = typeof card.querySelectorAll === 'function' ? card.querySelectorAll('.page-chip:not(.removing)') : [];
             let totalCardTabs = 0;
             tabChips.forEach(chip => {
@@ -2895,7 +2805,8 @@ function renderPerspectiveTagsBar(groupsOverride = null) {
               const parsed = parseInt(rawCount || '1', 10);
               totalCardTabs += (isNaN(parsed) || parsed < 1) ? 1 : parsed;
             });
-            categoryCounts[cat] = (categoryCounts[cat] || 0) + totalCardTabs;
+            categoryCounts[lower] = (categoryCounts[lower] || 0) + totalCardTabs;
+            if (!rawCategoryNames[lower]) rawCategoryNames[lower] = cat;
           }
         });
       }
@@ -2910,57 +2821,432 @@ function renderPerspectiveTagsBar(groupsOverride = null) {
     return;
   }
 
-  const activeList = [];
-  const emptyList = [];
+  const allList = [];
+  const renderedNames = new Set();
+  const labelOrderMap = new Map();
 
-  for (const labelObj of normalizedLabels) {
+  normalizedLabels.forEach((labelObj, idx) => {
     const name = labelObj.name;
-    const count = categoryCounts[name] || 0;
+    const lower = name.toLowerCase().trim();
+    if (!labelOrderMap.has(lower)) {
+      labelOrderMap.set(lower, idx);
+    }
+    if (renderedNames.has(lower)) return;
+    renderedNames.add(lower);
+    let count = 0;
+    for (const [groupLower, c] of Object.entries(categoryCounts)) {
+      if (areCategoryLabelsEquivalent(name, groupLower, activeP)) {
+        count += c;
+      }
+    }
     const desc = labelObj.description || '';
     const color = labelObj.color || '';
-    if (count > 0) {
-      activeList.push({ name, count, desc, color });
-    } else {
-      emptyList.push({ name, count: 0, desc, color });
-    }
-  }
+    allList.push({ name, count, desc, color });
+  });
 
   // Safety: ensure any active category with tabs that is not in normalizedLabels is also shown
-  for (const [catName, count] of Object.entries(categoryCounts)) {
-    if (count > 0 && !normalizedLabels.some(l => l.name === catName)) {
-      activeList.push({ name: catName, count, desc: '', color: '' });
+  for (const [lower, count] of Object.entries(categoryCounts)) {
+    const alreadyRendered = allList.some(item => areCategoryLabelsEquivalent(item.name, lower, activeP));
+    if (count > 0 && !alreadyRendered) {
+      renderedNames.add(lower);
+      const rawName = rawCategoryNames[lower] || lower;
+      allList.push({ name: rawName, count, desc: '', color: '' });
     }
   }
 
-  // Active pills sorted by open tab count descending
-  activeList.sort((a, b) => b.count - a.count);
+  // Tags with open tabs always come before empty tags; within each half, ordering matches sortGroupsByPerspectiveLabels:
+  // [Configured Tags in User Order] -> [Unconfigured Active Categories by count desc] -> [Fallback (Khác/Other)]
+  allList.sort((a, b) => {
+    const aHasTabs = (a.count || 0) > 0;
+    const bHasTabs = (b.count || 0) > 0;
+    if (aHasTabs !== bHasTabs) return aHasTabs ? -1 : 1;
 
-  let pillsHtml = '';
+    const aIsOther = isFallbackLabel(a?.name);
+    const bIsOther = isFallbackLabel(b?.name);
+    if (aIsOther !== bIsOther) return aIsOther ? 1 : -1;
 
-  for (const item of activeList) {
-    const isOther = isFallbackLabel(item.name);
-    const displayName = isOther ? (typeof t === 'function' ? t('tabs.uncategorized') : item.name) : item.name;
-    const titleText = item.desc ? `${item.desc}: ${item.count} tab${item.count !== 1 ? 's' : ''}` : `${displayName}: ${item.count} tab${item.count !== 1 ? 's' : ''}`;
-    const resolved = resolveTagColor(item.color);
-    const colorClass = (resolved && !isOther) ? ' has-color' : '';
-    const colorStyle = (resolved && !isOther) ? ` style="--pill-color: ${escapeHtml(resolved.hex)};"` : '';
-    const dotHtml = (resolved && !isOther) ? `<span class="pill-dot" style="background-color: ${escapeHtml(resolved.hex)};" aria-hidden="true"></span>` : '';
-    pillsHtml += `<button type="button" class="perspective-tag-pill is-active${colorClass}"${colorStyle} data-action="scroll-to-tag" data-target-tag="${escapeHtml(item.name)}" title="${escapeHtml(titleText)}" aria-label="${escapeHtml(displayName)}, ${item.count} tab${item.count !== 1 ? 's' : ''} open">${dotHtml}<span class="pill-name">${escapeHtml(displayName)}</span><span class="pill-count">${item.count}</span></button>`;
+    const keyA = typeof a?.name === 'string' ? a.name.toLowerCase().trim() : '';
+    const keyB = typeof b?.name === 'string' ? b.name.toLowerCase().trim() : '';
+    const idxA = labelOrderMap.has(keyA) ? labelOrderMap.get(keyA) : Infinity;
+    const idxB = labelOrderMap.has(keyB) ? labelOrderMap.get(keyB) : Infinity;
+
+    if (idxA !== idxB) return idxA - idxB;
+
+    return (b.count || 0) - (a.count || 0);
+  });
+
+  let totalTabs = 0;
+  for (const c of Object.values(categoryCounts)) {
+    totalTabs += c;
   }
 
-  for (const item of emptyList) {
+  const isAllSelected = activeCategoryFilter === null;
+  const allTitle = typeof t === 'function' ? t('tabs.all_categories_title') : 'View all categories (Esc)';
+  const allLabel = typeof t === 'function' ? t('tabs.all_categories') : 'All';
+  const allSelectedClass = isAllSelected ? ' is-selected' : '';
+  const allSelectedAria = isAllSelected ? 'true' : 'false';
+
+  let pillsHtml = `<button type="button" class="perspective-tag-btn perspective-tag-pill is-all${allSelectedClass}" role="tab" aria-selected="${allSelectedAria}" data-variant="tertiary" data-action="filter-category" data-category="all" title="${escapeHtml(allTitle)}" aria-label="${escapeHtml(allLabel)}, ${totalTabs} open tabs"><span class="pill-name">${escapeHtml(allLabel)}</span><span class="pill-count">${totalTabs}</span></button>`;
+
+  // Smart tag collapsing (Option 2):
+  // When user has few tabs across categories, empty categories (count === 0 and not currently selected)
+  // are collapsed behind a '+ N more' toggle button to prevent clutter and overflow.
+  const emptyItems = allList.filter(item => item.count === 0 && !(activeCategoryFilter !== null && areCategoryLabelsEquivalent(item.name, activeCategoryFilter, activeP)));
+  const shouldCollapseEmpty = !showEmptyCategoryTags && emptyItems.length >= 2;
+
+  const itemsToRender = shouldCollapseEmpty
+    ? allList.filter(item => item.count > 0 || (activeCategoryFilter !== null && areCategoryLabelsEquivalent(item.name, activeCategoryFilter, activeP)))
+    : allList;
+
+  let prevHadTabs = false;
+  for (const item of itemsToRender) {
+    // allList is sorted tabs-first, so the divider lands exactly once at the active → empty boundary
+    if (prevHadTabs && item.count === 0) {
+      pillsHtml += '<span class="perspective-tag-sep" aria-hidden="true"></span>';
+    }
+    prevHadTabs = item.count > 0;
     const isOther = isFallbackLabel(item.name);
     const displayName = isOther ? (typeof t === 'function' ? t('tabs.uncategorized') : item.name) : item.name;
-    const titleText = item.desc ? `${item.desc}` : `${displayName}`;
     const resolved = resolveTagColor(item.color);
     const colorClass = (resolved && !isOther) ? ' has-color' : '';
     const colorStyle = (resolved && !isOther) ? ` style="--pill-color: ${escapeHtml(resolved.hex)};"` : '';
-    const dotHtml = (resolved && !isOther) ? `<span class="pill-dot" style="background-color: ${escapeHtml(resolved.hex)}; opacity: 0.6;" aria-hidden="true"></span>` : '';
-    pillsHtml += `<span class="perspective-tag-pill is-empty${colorClass}"${colorStyle} title="${escapeHtml(titleText)}" aria-label="${escapeHtml(displayName)}, 0 open tabs">${dotHtml}<span class="pill-name">${escapeHtml(displayName)}</span><span class="pill-count">0</span></span>`;
+
+    const isSelected = activeCategoryFilter !== null && areCategoryLabelsEquivalent(item.name, activeCategoryFilter, activeP);
+    const selectedClass = isSelected ? ' is-selected' : '';
+    const selectedAria = isSelected ? 'true' : 'false';
+
+    if (item.count > 0) {
+      const titleText = item.desc ? `${item.desc}: ${item.count} tab${item.count !== 1 ? 's' : ''}` : `${displayName}: ${item.count} tab${item.count !== 1 ? 's' : ''}`;
+      const dotHtml = (resolved && !isOther) ? `<span class="pill-dot" style="background-color: ${escapeHtml(resolved.hex)};" aria-hidden="true"></span>` : '';
+      pillsHtml += `<button type="button" class="perspective-tag-btn perspective-tag-pill is-active${colorClass}${selectedClass}" role="tab" aria-selected="${selectedAria}" data-variant="tertiary"${colorStyle} data-action="filter-category" data-category="${escapeHtml(item.name)}" data-target-tag="${escapeHtml(item.name)}" title="${escapeHtml(titleText)}" aria-label="${escapeHtml(displayName)}, ${item.count} tab${item.count !== 1 ? 's' : ''} open">${dotHtml}<span class="pill-name">${escapeHtml(displayName)}</span><span class="pill-count">${item.count}</span></button>`;
+    } else {
+      const titleText = item.desc ? `${item.desc}` : `${displayName}`;
+      const dotHtml = (resolved && !isOther) ? `<span class="pill-dot" style="background-color: ${escapeHtml(resolved.hex)}; opacity: 0.6;" aria-hidden="true"></span>` : '';
+      pillsHtml += `<button type="button" class="perspective-tag-btn perspective-tag-pill is-empty${colorClass}${selectedClass}" role="tab" aria-selected="${selectedAria}" data-variant="tertiary"${colorStyle} data-action="filter-category" data-category="${escapeHtml(item.name)}" data-target-tag="${escapeHtml(item.name)}" title="${escapeHtml(titleText)}" aria-label="${escapeHtml(displayName)}, 0 open tabs">${dotHtml}<span class="pill-name">${escapeHtml(displayName)}</span></button>`;
+    }
+  }
+
+  // Render toggle button if there are collapsible empty categories
+  if (emptyItems.length >= 2) {
+    const toggleTitle = typeof t === 'function' ? t('tabs.toggle_empty_categories_title') : 'Toggle empty categories';
+    if (shouldCollapseEmpty) {
+      const moreLabel = typeof t === 'function' ? t('tabs.more_empty_categories', { count: emptyItems.length }) : `+ ${emptyItems.length} more`;
+      pillsHtml += `<button type="button" class="perspective-tag-btn perspective-tag-more-btn" data-variant="tertiary" data-action="toggle-empty-tags" title="${escapeHtml(toggleTitle)}" aria-label="${escapeHtml(moreLabel)}">${escapeHtml(moreLabel)}</button>`;
+    } else {
+      const lessLabel = typeof t === 'function' ? t('tabs.less_categories') : '- Less';
+      pillsHtml += `<button type="button" class="perspective-tag-btn perspective-tag-more-btn is-expanded" data-variant="tertiary" data-action="toggle-empty-tags" title="${escapeHtml(toggleTitle)}" aria-label="${escapeHtml(lessLabel)}">${escapeHtml(lessLabel)}</button>`;
+    }
+  }
+
+  if (typeof barEl.setAttribute === 'function') {
+    barEl.setAttribute('role', 'tablist');
+    barEl.setAttribute('aria-label', typeof t === 'function' ? t('tabs.categories_plural') : 'Categories');
   }
 
   renderIfChanged(barEl, pillsHtml, 'perspectiveTags');
   barEl.style.display = 'flex';
+
+  initTagsBarInteractions();
+
+  const scrollSelected = () => {
+    if (typeof barEl.querySelector === 'function') {
+      const selectedBtn = barEl.querySelector('.perspective-tag-btn.is-selected');
+      if (selectedBtn) {
+        scrollTagIntoView(barEl, selectedBtn);
+      }
+    }
+    updateTagsBarScrollMask(barEl);
+  };
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(scrollSelected);
+  } else {
+    scrollSelected();
+  }
+}
+
+/**
+ * scrollTagIntoView(barEl, targetBtn)
+ *
+ * Smoothly scrolls the horizontal tag bar to center the target button.
+ */
+function scrollTagIntoView(barEl, targetBtn) {
+  if (!barEl || !targetBtn) return;
+  const targetOffset = targetBtn.offsetLeft - barEl.offsetLeft;
+  const barWidth = barEl.clientWidth;
+  const btnWidth = targetBtn.offsetWidth;
+  const targetScrollLeft = Math.max(0, targetOffset - (barWidth - btnWidth) / 2);
+  if (typeof barEl.scrollTo === 'function') {
+    barEl.scrollTo({ left: targetScrollLeft, behavior: 'smooth' });
+  } else {
+    barEl.scrollLeft = targetScrollLeft;
+  }
+}
+
+/**
+ * updateTagsBarScrollMask(barEl)
+ *
+ * Dynamically toggles CSS mask classes on the tags bar when content overflows
+ * horizontally, providing visual indicators (gradient fade) at edge boundaries.
+ */
+function updateTagsBarScrollMask(barEl) {
+  if (!barEl || !barEl.classList) return;
+  const scrollWidth = barEl.scrollWidth || 0;
+  const clientWidth = barEl.clientWidth || 0;
+  const scrollLeft = barEl.scrollLeft || 0;
+  const hasOverflow = scrollWidth > clientWidth + 1;
+  if (!hasOverflow) {
+    if (typeof barEl.classList.remove === 'function') {
+      barEl.classList.remove('can-scroll-left', 'can-scroll-right');
+    }
+    return;
+  }
+  const canScrollLeft = scrollLeft > 2;
+  const canScrollRight = scrollLeft + clientWidth < scrollWidth - 2;
+  if (typeof barEl.classList.toggle === 'function') {
+    barEl.classList.toggle('can-scroll-left', canScrollLeft);
+    barEl.classList.toggle('can-scroll-right', canScrollRight);
+  }
+}
+
+/**
+ * initTagsBarInteractions()
+ *
+ * Attaches wheel-to-horizontal-scroll and scroll listener to perspective tags bar.
+ */
+function initTagsBarInteractions() {
+  if (typeof document === 'undefined') return;
+  const barEl = document.getElementById('perspectiveTagsBar');
+  if (!barEl || barEl.__interactionsAttached) return;
+  barEl.__interactionsAttached = true;
+
+  if (typeof barEl.addEventListener === 'function') {
+    barEl.addEventListener('wheel', (e) => {
+      if (barEl.scrollWidth > barEl.clientWidth) {
+        if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          barEl.scrollLeft += e.deltaY;
+          updateTagsBarScrollMask(barEl);
+        }
+      }
+    }, { passive: false });
+
+    barEl.addEventListener('scroll', () => {
+      updateTagsBarScrollMask(barEl);
+    }, { passive: true });
+  }
+}
+
+/**
+ * selectCategoryFilter(category)
+ *
+ * Switches active category filter for dedicated category view.
+ * Pass null or 'all' to return to overview mode (View chung).
+ */
+async function selectCategoryFilter(category) {
+  const normalized = (!category || category === 'all') ? null : String(category).trim();
+  if (activeCategoryFilter === normalized) return;
+  activeCategoryFilter = normalized;
+  resetRenderCache('missions');
+  resetRenderCache('perspectiveTags');
+  resetRenderCache('headerActions');
+  if (typeof renderStaticDashboard === 'function') {
+    await renderStaticDashboard({ inMemoryOnly: true });
+  }
+  if (typeof document !== 'undefined') {
+    const barEl = document.getElementById('perspectiveTagsBar');
+    if (barEl) {
+      if (typeof barEl.querySelector === 'function') {
+        const selectedBtn = barEl.querySelector('.perspective-tag-btn.is-selected');
+        if (selectedBtn) {
+          scrollTagIntoView(barEl, selectedBtn);
+        }
+      }
+      updateTagsBarScrollMask(barEl);
+    }
+  }
+}
+
+/* ----------------------------------------------------------------
+   DOMAIN GROUPING & SORTING ENGINE
+   ---------------------------------------------------------------- */
+const LANDING_PAGE_PATTERNS = [
+  { hostname: 'mail.google.com', test: (p, h) =>
+      !h.includes('#inbox/') && !h.includes('#sent/') && !h.includes('#search/') },
+  { hostname: 'x.com',            pathExact: ['/home'] },
+  { hostname: 'twitter.com',      pathExact: ['/home'] },
+  { hostname: 'linkedin.com',     pathExact: ['/'] },
+  { hostname: 'github.com',       pathExact: ['/'] },
+  { hostname: 'youtube.com',      pathExact: ['/'] },
+  ...(typeof LOCAL_LANDING_PAGE_PATTERNS !== 'undefined' && Array.isArray(LOCAL_LANDING_PAGE_PATTERNS) ? LOCAL_LANDING_PAGE_PATTERNS : []),
+];
+
+function isLandingPage(parsed, url) {
+  if (!parsed) return false;
+  const cleanHost = parsed.hostname.replace(/^www\./, '');
+  return LANDING_PAGE_PATTERNS.some(p => {
+    const targetHost = (p.hostname || '').replace(/^www\./, '');
+    const hostnameMatch = p.hostname
+      ? cleanHost === targetHost
+      : p.hostnameEndsWith
+        ? parsed.hostname.endsWith(p.hostnameEndsWith)
+        : false;
+    if (!hostnameMatch) return false;
+    if (p.test)       return p.test(parsed.pathname, url);
+    if (p.pathPrefix) return parsed.pathname.startsWith(p.pathPrefix);
+    if (p.pathExact)  return p.pathExact.includes(parsed.pathname);
+    return parsed.pathname === '/';
+  });
+}
+
+const landingHostnames = new Set(LANDING_PAGE_PATTERNS.map(p => p.hostname).filter(Boolean));
+const landingSuffixes = LANDING_PAGE_PATTERNS.map(p => p.hostnameEndsWith).filter(Boolean);
+
+function isLandingDomain(domain) {
+  if (!domain) return false;
+  if (landingHostnames.has(domain)) return true;
+  return landingSuffixes.some(s => domain.endsWith(s));
+}
+
+function matchCustomGroup(parsed) {
+  if (!parsed) return null;
+  const customGroups = (typeof LOCAL_CUSTOM_GROUPS !== 'undefined' && Array.isArray(LOCAL_CUSTOM_GROUPS)) ? LOCAL_CUSTOM_GROUPS : [];
+  return customGroups.find(r => {
+    const hostMatch = r.hostname
+      ? parsed.hostname === r.hostname
+      : r.hostnameEndsWith
+        ? parsed.hostname.endsWith(r.hostnameEndsWith)
+        : false;
+    if (!hostMatch) return false;
+    if (r.pathPrefix) return parsed.pathname.startsWith(r.pathPrefix);
+    return true;
+  }) || null;
+}
+
+let activeCategoryDomainGroups = [];
+
+/**
+ * groupTabsByDomain(tabs)
+ *
+ * Groups an array of tabs by domain/hostname into mission card groups.
+ * Detects landing pages, applies custom rules, and sorts domain groups
+ * with the domain having the most open tabs first.
+ */
+function groupTabsByDomain(tabs) {
+  if (!Array.isArray(tabs)) return [];
+  const groupMap = Object.create(null);
+  const landingTabs = [];
+
+  for (const tab of tabs) {
+    try {
+      let parsed = null;
+      let isFile = false;
+      if (tab.url && tab.url.startsWith('file://')) {
+        isFile = true;
+      } else {
+        try { parsed = new URL(tab.url); } catch {}
+      }
+
+      if (parsed && isLandingPage(parsed, tab.url)) {
+        landingTabs.push(tab);
+        continue;
+      }
+
+      const customRule = parsed ? matchCustomGroup(parsed) : null;
+      if (customRule) {
+        const key = customRule.groupKey;
+        if (!groupMap[key]) groupMap[key] = { domain: key, label: customRule.groupLabel, isPriority: isLandingDomain(key), tabs: [] };
+        groupMap[key].tabs.push(tab);
+        continue;
+      }
+
+      let hostname = isFile ? 'local-files' : (parsed?.hostname || null);
+      if (!hostname) continue;
+
+      if (!groupMap[hostname]) groupMap[hostname] = { domain: hostname, isPriority: isLandingDomain(hostname), tabs: [] };
+      groupMap[hostname].tabs.push(tab);
+    } catch {}
+  }
+
+  if (landingTabs.length > 0) {
+    groupMap['__landing-pages__'] = { domain: '__landing-pages__', isPriority: false, tabs: landingTabs };
+  }
+
+  return Object.values(groupMap).sort((a, b) => {
+    const aIsLanding = a.domain === '__landing-pages__';
+    const bIsLanding = b.domain === '__landing-pages__';
+    if (aIsLanding !== bIsLanding) return aIsLanding ? -1 : 1;
+
+    const aIsPriority = a.isPriority;
+    const bIsPriority = b.isPriority;
+    if (aIsPriority !== bIsPriority) return aIsPriority ? -1 : 1;
+
+    if (b.tabs.length !== a.tabs.length) {
+      return b.tabs.length - a.tabs.length;
+    }
+    return String(a.domain).localeCompare(String(b.domain));
+  });
+}
+
+/**
+ * renderCategoryFocusView(categoryGroup, categoryMeta)
+ *
+ * Renders dedicated category view with category header, actions, and domain-grouped mission cards.
+ */
+function renderCategoryFocusView(categoryGroup, categoryMeta) {
+  const tabs = Array.isArray(categoryGroup?.tabs) ? categoryGroup.tabs : [];
+  const categoryName = categoryMeta?.name || categoryGroup?.label || categoryGroup?.domain || '';
+  const description = categoryMeta?.description || '';
+  const resolved = resolveTagColor(categoryMeta?.color);
+  const colorHex = resolved ? resolved.hex : 'var(--vbg-border-contrast)';
+  const tabCount = tabs.length;
+
+  const isOther = isFallbackLabel(categoryName);
+  const displayName = isOther ? (typeof t === 'function' ? t('tabs.uncategorized') : categoryName) : categoryName;
+
+  const tabBadgeKey = tabCount === 1 ? 'tabs.open_tabs_count_single' : 'tabs.open_tabs_count_plural';
+  const tabBadgeText = typeof t === 'function' ? t(tabBadgeKey, { count: tabCount }) : `${tabCount} tab${tabCount !== 1 ? 's' : ''} open`;
+
+  const backLabel = typeof t === 'function' ? t('tabs.back_to_all') : 'Back to all categories';
+
+  let bodyHtml = '';
+  if (tabCount === 0) {
+    activeCategoryDomainGroups = [];
+    const emptyTitle = typeof t === 'function' ? t('tabs.empty_category_title') : 'No open tabs';
+    const emptyDesc = typeof t === 'function' ? t('tabs.empty_category_desc') : 'There are currently no open tabs in this category.';
+    bodyHtml = `
+      <div class="category-focus-empty">
+        <div class="empty-title">${escapeHtml(emptyTitle)}</div>
+        <div class="empty-subtitle">${escapeHtml(emptyDesc)}</div>
+        <button type="button" class="action-btn" data-variant="secondary" data-action="filter-category" data-category="all">
+          ${escapeHtml(backLabel)}
+        </button>
+      </div>
+    `;
+  } else {
+    // Group tabs inside this category by domain, sorted by domain with the most tabs first
+    activeCategoryDomainGroups = groupTabsByDomain(tabs);
+    const lastActiveTab = (typeof getLastActiveTab === 'function') ? getLastActiveTab() : null;
+    const cardsHtml = activeCategoryDomainGroups.map(grp => renderDomainCard(grp, lastActiveTab)).join('');
+    bodyHtml = `<div class="category-focus-missions missions">${cardsHtml}</div>`;
+  }
+
+  return `
+    <div class="category-focus-view" data-category="${escapeHtml(categoryName)}">
+      <div class="category-focus-header">
+        <div class="category-focus-title-block">
+          <div class="category-focus-title-row">
+            ${resolved ? `<span class="category-focus-dot" style="background-color: ${escapeHtml(colorHex)};" aria-hidden="true"></span>` : ''}
+            <h2 class="category-focus-title">${escapeHtml(displayName)}</h2>
+            <span class="category-focus-count">${escapeHtml(tabBadgeText)}</span>
+          </div>
+          ${description ? `<p class="category-focus-desc">${escapeHtml(description)}</p>` : ''}
+        </div>
+      </div>
+      <div class="category-focus-body">
+        ${bodyHtml}
+      </div>
+    </div>
+  `;
 }
 
 async function switchPerspective(pid) {
@@ -2985,16 +3271,16 @@ async function switchPerspective(pid) {
     }
     return;
   }
-  if (activeClassificationAbortController) {
-    try { activeClassificationAbortController.abort(); } catch {}
-    activeClassificationAbortController = null;
-  }
+  // Leave in-flight Jev requests alone: their answers still land in the previous perspective's cache.
   activePerspectiveId = pid;
+  activeCategoryFilter = null;
+  showEmptyCategoryTags = false;
   resetRenderCache('missions');
   resetRenderCache('perspectiveTags');
   setLocalSettingLock(400);
   if (typeof chrome !== 'undefined' && chrome.storage?.local?.set) {
-    enqueueStorageWrite(() => chrome.storage.local.set({ activePerspectiveId })).catch(() => {});
+    // The worker drops jobs for a perspective that is not the stored active one, so store it first.
+    await enqueueStorageWrite(() => chrome.storage.local.set({ activePerspectiveId })).catch(() => {});
   }
   if (typeof document !== 'undefined') {
     const l = document.getElementById('perspectiveLoader');
@@ -3007,9 +3293,19 @@ async function switchPerspective(pid) {
 function getPerspectiveDisplayName(p) {
   if (!p) return '';
   if (p.id === 'domain') return typeof t === 'function' ? t('rail.domain_default') : 'Domain';
-  if (p.id === 'topic' && (p.name === 'Chủ đề' || p.name === 'Topic')) return typeof t === 'function' ? t('rail.topic_default') : p.name;
-  if (p.id === 'purpose' && (p.name === 'Mục đích' || p.name === 'Purpose')) return typeof t === 'function' ? t('rail.purpose_default') : p.name;
-  return p.name;
+  const tplKey = resolvePerspectiveTemplateKey(p);
+  if (tplKey && typeof PERSPECTIVE_TEMPLATES !== 'undefined' && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, tplKey)) {
+    const activeLang = typeof TabOutI18n !== 'undefined' && TabOutI18n.getLanguage ? TabOutI18n.getLanguage() : 'en';
+    const tpl = getPerspectiveTemplate(tplKey, activeLang);
+    if (tpl && PERSPECTIVE_TEMPLATES[tplKey]) {
+      const enName = PERSPECTIVE_TEMPLATES[tplKey].en?.name;
+      const viName = PERSPECTIVE_TEMPLATES[tplKey].vi?.name;
+      if (!p.name || p.name === enName || p.name === viName) {
+        return tpl.name;
+      }
+    }
+  }
+  return p.name || '';
 }
 
 function renderPerspectiveRail(tabsOverride = null) {
@@ -3059,7 +3355,7 @@ function renderPerspectiveRail(tabsOverride = null) {
       ? PERSPECTIVE_ICONS[p.icon]
       : PERSPECTIVE_ICONS.folder;
     const editBtn = !p.isSystem
-      ? `<button type="button" class="perspective-tab-edit-btn" data-action="edit-perspective" data-perspective-id="${escapeHtml(p.id)}" title="${escapeHtml(typeof t === 'function' ? t('rail.edit_perspective') : 'Edit perspective')}" aria-label="${escapeHtml(typeof t === 'function' ? t('rail.edit_perspective') : 'Edit perspective')}">
+      ? `<button type="button" class="perspective-tab-edit-btn" data-variant="tertiary" data-action="edit-perspective" data-perspective-id="${escapeHtml(p.id)}" title="${escapeHtml(typeof t === 'function' ? t('rail.edit_perspective') : 'Edit perspective')}" aria-label="${escapeHtml(typeof t === 'function' ? t('rail.edit_perspective') : 'Edit perspective')}">
           ${PERSPECTIVE_ICONS.edit}
         </button>`
       : '';
@@ -3215,15 +3511,15 @@ function renderQuickReturnBar(tabsOverride) {
           </svg>
           <span>${escapeHtml(quickReturnBadge)}</span>
         </span>
-        <button type="button" class="quick-return-btn" data-action="focus-tab" data-tab-url="${validUrl}"${lastTab.id ? ` data-tab-id="${lastTab.id}"` : ''} aria-keyshortcuts="Escape" title="${escapeHtml(quickReturnBackTo)}">
+        <button type="button" class="quick-return-btn" data-variant="tertiary" data-action="focus-tab" data-tab-url="${validUrl}"${lastTab.id ? ` data-tab-id="${lastTab.id}"` : ''} aria-keyshortcuts="Escape" title="${escapeHtml(quickReturnBackTo)}">
           ${faviconUrl ? `<img class="quick-return-favicon" src="${faviconUrl}" alt="" aria-hidden="true">` : ''}
           <span class="quick-return-title">${safeTitle}</span>
           <span class="quick-return-kbd vbg-mono"><kbd>Esc</kbd></span>
         </button>
       </div>
-      <button type="button" class="quick-return-dismiss" data-action="dismiss-quick-return" title="${escapeHtml(quickReturnClose)}" aria-label="${escapeHtml(quickReturnClose)}">
+      <button type="button" class="quick-return-dismiss" data-variant="tertiary" data-action="dismiss-quick-return" title="${escapeHtml(quickReturnClose)}" aria-label="${escapeHtml(quickReturnClose)}">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>
     </div>
@@ -3270,7 +3566,7 @@ function renderRecentSidebarCard(tabsOverride) {
     const rank = tab.mruRank || (idx + 1);
 
     return `
-      <button type="button" class="recent-sidebar-item decay-rank-${rank}" data-action="focus-tab" data-tab-url="${validUrl}"${tab.id ? ` data-tab-id="${tab.id}"` : ''} title="${escapeHtml(returnHint)}" aria-label="${safeTitle}">
+      <button type="button" class="recent-sidebar-item decay-rank-${rank}" data-variant="tertiary" data-action="focus-tab" data-tab-url="${validUrl}"${tab.id ? ` data-tab-id="${tab.id}"` : ''} title="${escapeHtml(returnHint)}" aria-label="${safeTitle}">
         ${faviconUrl ? `<img class="recent-sidebar-favicon" src="${faviconUrl}" alt="" aria-hidden="true">` : ''}
         <span class="recent-sidebar-item-title">${safeTitle}</span>
         <span class="recent-sidebar-kbd vbg-mono"><kbd>${kbd}</kbd></span>
@@ -3385,15 +3681,15 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}, isExpanded = false, doma
     const closeTooltip = typeof t === 'function' ? t('chip.close_tab') : 'Close this tab';
 
     return `<div class="page-chip${lastActiveClass}" data-tab-count="${count}" data-tab-url="${validUrl}"${tab.id ? ` data-tab-id="${tab.id}"` : ''}>
-      <button type="button" class="chip-title-btn" data-action="focus-tab" data-tab-url="${validUrl}"${tab.id ? ` data-tab-id="${tab.id}"` : ''} title="${safeTitle}" aria-label="${safeTitle}">
+      <button type="button" class="chip-title-btn" data-variant="tertiary" data-action="focus-tab" data-tab-url="${validUrl}"${tab.id ? ` data-tab-id="${tab.id}"` : ''} title="${safeTitle}" aria-label="${safeTitle}">
         ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="">` : ''}
         <span class="chip-text">${portPrefix}${escapeHtml(rawLabel)}</span>${dupeTag}${lastActiveTag}
       </button>
       <div class="chip-actions">
-        <button type="button" class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${validUrl}" data-tab-title="${safeTitle}" title="${escapeHtml(saveTooltip)}" aria-label="${escapeHtml(saveTooltip)}">
+        <button type="button" class="chip-action chip-save" data-variant="tertiary" data-action="defer-single-tab" data-tab-url="${validUrl}" data-tab-title="${safeTitle}" title="${escapeHtml(saveTooltip)}" aria-label="${escapeHtml(saveTooltip)}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
-        <button type="button" class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${validUrl}" title="${escapeHtml(closeTooltip)}" aria-label="${escapeHtml(closeTooltip)}">
+        <button type="button" class="chip-action chip-close" data-variant="tertiary" data-action="close-single-tab" data-tab-url="${validUrl}" title="${escapeHtml(closeTooltip)}" aria-label="${escapeHtml(closeTooltip)}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
@@ -3409,7 +3705,7 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}, isExpanded = false, doma
 
   return `
     <div class="page-chips-overflow" style="display:none">${hiddenChips}</div>
-    <button type="button" class="page-chip-overflow" data-action="expand-chips" aria-label="${escapeHtml(moreAria)}">
+    <button type="button" class="page-chip-overflow" data-variant="tertiary" data-action="expand-chips" aria-label="${escapeHtml(moreAria)}">
       ${escapeHtml(moreText)}
     </button>`;
 }
@@ -3493,15 +3789,15 @@ function renderDomainCard(group, lastActiveTabOverride) {
     const closeTooltip = typeof t === 'function' ? t('chip.close_tab') : 'Close this tab';
 
     return `<div class="page-chip${lastActiveClass}" data-tab-count="${count}" data-tab-url="${validUrl}"${tab.id ? ` data-tab-id="${tab.id}"` : ''}>
-      <button type="button" class="chip-title-btn" data-action="focus-tab" data-tab-url="${validUrl}"${tab.id ? ` data-tab-id="${tab.id}"` : ''} title="${safeTitle}" aria-label="${safeTitle}">
+      <button type="button" class="chip-title-btn" data-variant="tertiary" data-action="focus-tab" data-tab-url="${validUrl}"${tab.id ? ` data-tab-id="${tab.id}"` : ''} title="${safeTitle}" aria-label="${safeTitle}">
         ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="">` : ''}
         <span class="chip-text">${portPrefix}${escapeHtml(rawLabel)}</span>${dupeTag}${lastActiveTag}
       </button>
       <div class="chip-actions">
-        <button type="button" class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${validUrl}" data-tab-title="${safeTitle}" title="${escapeHtml(saveTooltip)}" aria-label="${escapeHtml(saveTooltip)}">
+        <button type="button" class="chip-action chip-save" data-variant="tertiary" data-action="defer-single-tab" data-tab-url="${validUrl}" data-tab-title="${safeTitle}" title="${escapeHtml(saveTooltip)}" aria-label="${escapeHtml(saveTooltip)}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
-        <button type="button" class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${validUrl}" title="${escapeHtml(closeTooltip)}" aria-label="${escapeHtml(closeTooltip)}">
+        <button type="button" class="chip-action chip-close" data-variant="tertiary" data-action="close-single-tab" data-tab-url="${validUrl}" title="${escapeHtml(closeTooltip)}" aria-label="${escapeHtml(closeTooltip)}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
         </button>
       </div>
@@ -3514,7 +3810,7 @@ function renderDomainCard(group, lastActiveTabOverride) {
       ? (typeof t === 'function' ? t('tabs.close_single_tab') : 'Close tab')
       : (typeof t === 'function' ? t('tabs.close_group', { count: tabCount }) : `Close ${tabCount} tabs`);
     actionsHtml += `
-      <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain="${escapeHtml(group.domain)}">
+      <button class="action-btn close-tabs" data-variant="tertiary" data-action="close-domain-tabs" data-domain="${escapeHtml(group.domain)}">
         ${ICONS.close}
         ${escapeHtml(closeBtnText)}
       </button>`;
@@ -3524,7 +3820,7 @@ function renderDomainCard(group, lastActiveTabOverride) {
     const dupeUrlsEncoded = escapeHtml(JSON.stringify(dupeUrls.map(([url]) => url)));
     const closeDupesText = typeof t === 'function' ? t('tabs.close_dupes', { count: totalExtras }) : `Close ${totalExtras} duplicate${totalExtras !== 1 ? 's' : ''}`;
     actionsHtml += `
-      <button class="action-btn" data-action="dedup-keep-one" data-dupe-urls="${dupeUrlsEncoded}">
+      <button class="action-btn" data-variant="tertiary" data-action="dedup-keep-one" data-dupe-urls="${dupeUrlsEncoded}">
         ${escapeHtml(closeDupesText)}
       </button>`;
   }
@@ -3542,7 +3838,15 @@ function renderDomainCard(group, lastActiveTabOverride) {
   if (group.isSemantic && group.label && activePerspectiveId !== 'domain') {
     const activeP = currentPerspectives.find(p => p.id === activePerspectiveId);
     if (activeP && Array.isArray(activeP.labels)) {
-      const match = activeP.labels.find(l => getLabelName(l).toLowerCase() === group.label.toLowerCase());
+      const displayLabels = typeof getPerspectiveDisplayLabels === 'function'
+        ? getPerspectiveDisplayLabels(activeP)
+        : activeP.labels;
+      const isMatch = l => {
+        const lName = getLabelName(l);
+        return lName.toLowerCase() === group.label.toLowerCase() ||
+               (typeof areCategoryLabelsEquivalent === 'function' && areCategoryLabelsEquivalent(lName, group.label, activeP));
+      };
+      const match = displayLabels.find(isMatch) || activeP.labels.find(isMatch);
       const colorKey = match ? getLabelColor(match) : '';
       const resolved = resolveTagColor(colorKey);
       if (resolved && !isFallbackLabel(group.label)) {
@@ -3683,7 +3987,7 @@ function renderDeferredItem(item) {
           <span>${escapeHtml(ago)}</span>
         </div>
       </div>
-      <button class="deferred-dismiss" data-action="dismiss-deferred" data-deferred-id="${escapeHtml(item.id)}" title="${escapeHtml(dismissTooltip)}" aria-label="${escapeHtml(dismissTooltip)}">
+      <button class="deferred-dismiss" data-variant="tertiary" data-action="dismiss-deferred" data-deferred-id="${escapeHtml(item.id)}" title="${escapeHtml(dismissTooltip)}" aria-label="${escapeHtml(dismissTooltip)}">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
       </button>
     </div>`;
@@ -3716,10 +4020,10 @@ function renderArchiveItem(item) {
         <span class="archive-item-date">${escapeHtml(domain ? domain + ' · ' + ago : ago)}</span>
       </div>
       <div class="archive-item-actions">
-        <button type="button" class="archive-action-btn unarchive" data-action="unarchive-saved-tab" data-archive-id="${escapeHtml(item.id)}" title="${escapeHtml(restoreTooltip)}" aria-label="${escapeHtml(restoreTooltip)}">
+        <button type="button" class="archive-action-btn unarchive" data-variant="tertiary" data-action="unarchive-saved-tab" data-archive-id="${escapeHtml(item.id)}" title="${escapeHtml(restoreTooltip)}" aria-label="${escapeHtml(restoreTooltip)}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" /></svg>
         </button>
-        <button type="button" class="archive-action-btn delete" data-action="delete-archived-tab" data-archive-id="${escapeHtml(item.id)}" title="${escapeHtml(deleteTooltip)}" aria-label="${escapeHtml(deleteTooltip)}">
+        <button type="button" class="archive-action-btn delete" data-variant="tertiary" data-action="delete-archived-tab" data-archive-id="${escapeHtml(item.id)}" title="${escapeHtml(deleteTooltip)}" aria-label="${escapeHtml(deleteTooltip)}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
         </button>
       </div>
@@ -3825,7 +4129,7 @@ function renderRecentlyClosedItem(item) {
         </a>
         <span class="recently-closed-meta">${metaText}</span>
       </div>
-      <button type="button" class="recently-closed-action-btn restore" data-action="restore-closed-tab" data-session-id="${escapeHtml(item.sessionId || '')}" data-url="${validUrl}" title="${escapeHtml(reopenTooltip)}" aria-label="${escapeHtml(reopenTooltip)}">
+      <button type="button" class="recently-closed-action-btn restore" data-variant="tertiary" data-action="restore-closed-tab" data-session-id="${escapeHtml(item.sessionId || '')}" data-url="${validUrl}" title="${escapeHtml(reopenTooltip)}" aria-label="${escapeHtml(reopenTooltip)}">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
         </svg>
@@ -3966,6 +4270,10 @@ async function renderStaticDashboard(options = {}) {
     // --- SEMANTIC PERSPECTIVE GROUPING (INSTANT 0MS FAST PATH) ---
     const activeP = currentPerspectives.find(p => p.id === activePerspectiveId) || currentPerspectives[0];
     const pid = activeP ? activeP.id : 'domain';
+    if (!Object.prototype.hasOwnProperty.call(tabClassificationCache, pid)) {
+      await ensureClassificationPartition(pid);
+      if (thisSeq !== currentRenderSequenceId) return;
+    }
     if (!tabClassificationCache[pid]) {
       tabClassificationCache[pid] = {};
     }
@@ -3992,6 +4300,9 @@ async function renderStaticDashboard(options = {}) {
       }
     }
 
+    const activeLabels = getPerspectiveDisplayLabels(activeP);
+    const activeLang = typeof TabOutI18n !== 'undefined' && TabOutI18n.getLanguage ? TabOutI18n.getLanguage() : 'en';
+
     // Instant Fast Path: Group immediately from cache without waiting for network
     for (const tab of realTabs) {
       const normUrl = normalizeUrlForCache(tab.url) || tab.url || '';
@@ -3999,155 +4310,51 @@ async function renderStaticDashboard(options = {}) {
 
       let entry = cache[normUrl];
       let label = getCacheLabel(entry);
-      const isFailedRecently = entry?.lastAiAttempt && (Date.now() - entry.lastAiAttempt < (entry.cooldownMs || 15000));
       const inFlightKey = `${pid}:${normUrl}`;
+
+      // Anything short of a real Jev decision (missing, local, domain-ai placeholder) is queued for refinement
+      if (!skipBackgroundAi && isTabReadyForAi(tab) && !inFlightUrls.has(inFlightKey) && needsJev(entry)) {
+        uncachedTabs.push(tab);
+      }
 
       if (!label) {
         const host = extractHostname(tab.url);
         const domainAiLabel = (domainAiLabelMap && !MULTI_TOPIC_DOMAINS.has(host) && domainAiLabelMap.get(host)) || null;
         if (domainAiLabel) {
+          // domain-ai serves as instant 0ms placeholder until the Jev pass lands
           label = domainAiLabel;
           cache[normUrl] = { label, source: 'domain-ai', timestamp: Date.now() };
-          // domain-ai serves as instant 0ms placeholder; queue for background Jev AI refinement
-          if (!tab.incognito && !skipBackgroundAi && !inFlightUrls.has(inFlightKey) && !isFailedRecently) {
-            uncachedTabs.push(tab);
-          }
         } else {
           // If no domain-level AI cache exists, assign perspective fallback label ('Khác') while awaiting true Jev AI pass
-          const fallbackObj = (activeP?.labels || []).find(l => isFallbackLabel(getLabelName(l)));
-          label = fallbackObj ? getLabelName(fallbackObj) : 'Khác';
-          if (!tab.incognito && !skipBackgroundAi && !inFlightUrls.has(inFlightKey) && !isFailedRecently) {
-            uncachedTabs.push(tab);
-          }
-        }
-      } else if (!['ai', 'ai-low-confidence'].includes(getCacheSource(entry))) {
-        // Upgrade domain-ai placeholders to true AI in background
-        if (!tab.incognito && !skipBackgroundAi && !inFlightUrls.has(inFlightKey) && !isFailedRecently) {
-          uncachedTabs.push(tab);
+          const fallbackObj = (activeLabels || []).find(l => isFallbackLabel(getLabelName(l)));
+          label = fallbackObj ? getLabelName(fallbackObj) : getFallbackLabelName(activeLang);
         }
       }
 
-      if (!semMap[label]) {
-        semMap[label] = { domain: `perspective:${label}`, label, isSemantic: true, tabs: [] };
+      // Map raw label (e.g. from cached previous language) to active language display label
+      let displayCategory = label;
+      if (Array.isArray(activeLabels) && activeLabels.length > 0) {
+        const matched = activeLabels.find(l => areCategoryLabelsEquivalent(label, l.name, activeP));
+        if (matched && matched.name) {
+          displayCategory = matched.name;
+        }
       }
-      semMap[label].tabs.push(tab);
+
+      if (!semMap[displayCategory]) {
+        semMap[displayCategory] = { domain: `perspective:${displayCategory}`, label: displayCategory, isSemantic: true, tabs: [] };
+      }
+      semMap[displayCategory].tabs.push(tab);
     }
 
-    domainGroups = Object.values(semMap).sort((a, b) => {
-      const aIsOther = isFallbackLabel(a.label);
-      const bIsOther = isFallbackLabel(b.label);
-      if (aIsOther !== bIsOther) return aIsOther ? 1 : -1;
-      return b.tabs.length - a.tabs.length;
-    });
+    domainGroups = sortGroupsByPerspectiveLabels(Object.values(semMap), activeLabels, activeP);
 
     // If OpenRouter is configured and there are uncached tabs, run non-blocking background Jev refinement
     if (!skipBackgroundAi && openRouterApiKey && uncachedTabs.length > 0) {
       triggerBackgroundClassification(uncachedTabs, activeP);
     }
-
   } else {
     // --- STANDARD DOMAIN GROUPING ---
-    const LANDING_PAGE_PATTERNS = [
-      { hostname: 'mail.google.com', test: (p, h) =>
-          !h.includes('#inbox/') && !h.includes('#sent/') && !h.includes('#search/') },
-      { hostname: 'x.com',            pathExact: ['/home'] },
-      { hostname: 'twitter.com',      pathExact: ['/home'] },
-      { hostname: 'linkedin.com',     pathExact: ['/'] },
-      { hostname: 'github.com',       pathExact: ['/'] },
-      { hostname: 'youtube.com',      pathExact: ['/'] },
-      ...(typeof LOCAL_LANDING_PAGE_PATTERNS !== 'undefined' && Array.isArray(LOCAL_LANDING_PAGE_PATTERNS) ? LOCAL_LANDING_PAGE_PATTERNS : []),
-    ];
-
-    function isLandingPage(parsed, url) {
-      if (!parsed) return false;
-      const cleanHost = parsed.hostname.replace(/^www\./, '');
-      return LANDING_PAGE_PATTERNS.some(p => {
-        const targetHost = (p.hostname || '').replace(/^www\./, '');
-        const hostnameMatch = p.hostname
-          ? cleanHost === targetHost
-          : p.hostnameEndsWith
-            ? parsed.hostname.endsWith(p.hostnameEndsWith)
-            : false;
-        if (!hostnameMatch) return false;
-        if (p.test)       return p.test(parsed.pathname, url);
-        if (p.pathPrefix) return parsed.pathname.startsWith(p.pathPrefix);
-        if (p.pathExact)  return p.pathExact.includes(parsed.pathname);
-        return parsed.pathname === '/';
-      });
-    }
-
-    domainGroups = [];
-    const groupMap    = Object.create(null);
-    const landingTabs = [];
-    const customGroups = (typeof LOCAL_CUSTOM_GROUPS !== 'undefined' && Array.isArray(LOCAL_CUSTOM_GROUPS)) ? LOCAL_CUSTOM_GROUPS : [];
-
-    const landingHostnames = new Set(LANDING_PAGE_PATTERNS.map(p => p.hostname).filter(Boolean));
-    const landingSuffixes = LANDING_PAGE_PATTERNS.map(p => p.hostnameEndsWith).filter(Boolean);
-    function isLandingDomain(domain) {
-      if (landingHostnames.has(domain)) return true;
-      return landingSuffixes.some(s => domain.endsWith(s));
-    }
-
-    function matchCustomGroup(parsed) {
-      if (!parsed) return null;
-      return customGroups.find(r => {
-        const hostMatch = r.hostname
-          ? parsed.hostname === r.hostname
-          : r.hostnameEndsWith
-            ? parsed.hostname.endsWith(r.hostnameEndsWith)
-            : false;
-        if (!hostMatch) return false;
-        if (r.pathPrefix) return parsed.pathname.startsWith(r.pathPrefix);
-        return true;
-      }) || null;
-    }
-
-    for (const tab of realTabs) {
-      try {
-        let parsed = null;
-        let isFile = false;
-        if (tab.url && tab.url.startsWith('file://')) {
-          isFile = true;
-        } else {
-          try { parsed = new URL(tab.url); } catch {}
-        }
-
-        if (parsed && isLandingPage(parsed, tab.url)) {
-          landingTabs.push(tab);
-          continue;
-        }
-
-        const customRule = parsed ? matchCustomGroup(parsed) : null;
-        if (customRule) {
-          const key = customRule.groupKey;
-          if (!groupMap[key]) groupMap[key] = { domain: key, label: customRule.groupLabel, isPriority: isLandingDomain(key), tabs: [] };
-          groupMap[key].tabs.push(tab);
-          continue;
-        }
-
-        let hostname = isFile ? 'local-files' : (parsed?.hostname || null);
-        if (!hostname) continue;
-
-        if (!groupMap[hostname]) groupMap[hostname] = { domain: hostname, isPriority: isLandingDomain(hostname), tabs: [] };
-        groupMap[hostname].tabs.push(tab);
-      } catch {}
-    }
-
-    if (landingTabs.length > 0) {
-      groupMap['__landing-pages__'] = { domain: '__landing-pages__', isPriority: false, tabs: landingTabs };
-    }
-
-    domainGroups = Object.values(groupMap).sort((a, b) => {
-      const aIsLanding = a.domain === '__landing-pages__';
-      const bIsLanding = b.domain === '__landing-pages__';
-      if (aIsLanding !== bIsLanding) return aIsLanding ? -1 : 1;
-
-      const aIsPriority = a.isPriority;
-      const bIsPriority = b.isPriority;
-      if (aIsPriority !== bIsPriority) return aIsPriority ? -1 : 1;
-
-      return b.tabs.length - a.tabs.length;
-    });
+    domainGroups = groupTabsByDomain(realTabs);
   }
 
   // --- Render domain/perspective cards ---
@@ -4181,7 +4388,20 @@ async function renderStaticDashboard(options = {}) {
     renderQuickReturnBar(recentTabs);
     if (domainGroups.length > 0) {
       if (openTabsSectionTitle) openTabsSectionTitle.textContent = viewTitle;
-      if (openTabsSectionCount) openTabsSectionCount.textContent = countLabel;
+      if (openTabsSectionCount) {
+        if (activeCategoryFilter !== null && !isDomainView) {
+          const matchedGroup = domainGroups.find(g => {
+            const rawLabel = g.label || g.domain || '';
+            return areCategoryLabelsEquivalent(rawLabel, activeCategoryFilter, activeP);
+          });
+          const focusTabsCount = matchedGroup?.tabs?.length || 0;
+          openTabsSectionCount.textContent = typeof t === 'function'
+            ? (focusTabsCount === 1 ? t('tabs.open_tabs_count_single') : t('tabs.open_tabs_count_plural', { count: focusTabsCount }))
+            : `${focusTabsCount} tab${focusTabsCount !== 1 ? 's' : ''}`;
+        } else {
+          openTabsSectionCount.textContent = countLabel;
+        }
+      }
       renderOpenTabsHeaderActions(realTabs);
       if (thisSeq !== currentRenderSequenceId) return;
       if (openTabsMissionsEl) {
@@ -4196,7 +4416,19 @@ async function renderStaticDashboard(options = {}) {
             timeout: el.dataset.confirmTimeout
           });
         });
-        const newHtml = domainGroups.map(g => renderDomainCard(g, lastActiveTab)).join('');
+        let newHtml = '';
+        if (activeCategoryFilter !== null && !isDomainView) {
+          const matchedGroup = domainGroups.find(g => {
+            const name = g.label || g.domain;
+            return typeof name === 'string' && areCategoryLabelsEquivalent(name, activeCategoryFilter, activeP);
+          }) || { label: activeCategoryFilter, domain: `perspective:${activeCategoryFilter}`, isSemantic: true, tabs: [] };
+
+          const displayLabels = typeof getPerspectiveDisplayLabels === 'function' ? getPerspectiveDisplayLabels(activeP) : normalizeLabels(activeP?.labels);
+          const categoryMeta = displayLabels.find(l => areCategoryLabelsEquivalent(l.name, activeCategoryFilter, activeP)) || { name: activeCategoryFilter, description: '', color: '' };
+          newHtml = renderCategoryFocusView(matchedGroup, categoryMeta);
+        } else {
+          newHtml = domainGroups.map(g => renderDomainCard(g, lastActiveTab)).join('');
+        }
         const changed = renderIfChanged(openTabsMissionsEl, newHtml, 'missions');
         if (changed && activeConfirmings.length > 0) {
           activeConfirmings.forEach(item => {
@@ -4232,17 +4464,25 @@ async function renderStaticDashboard(options = {}) {
       renderOpenTabsHeaderActions([]);
       if (thisSeq !== currentRenderSequenceId) return;
       if (openTabsMissionsEl) {
-        const emptyTitle = typeof t === 'function' ? t('tabs.all_closed_title') : 'All tabs closed';
-        const emptyDesc = typeof t === 'function' ? t('tabs.all_closed_desc') : 'Clean workspace';
-        const emptyHtml = `
-          <div class="missions-empty-state">
-            <div class="empty-title">${escapeHtml(emptyTitle)}</div>
-            <div class="empty-subtitle">${escapeHtml(emptyDesc)}</div>
-          </div>
-        `;
-        renderIfChanged(openTabsMissionsEl, emptyHtml, 'missions');
+        if (activeCategoryFilter !== null && !isDomainView) {
+          const matchedGroup = { label: activeCategoryFilter, domain: `perspective:${activeCategoryFilter}`, isSemantic: true, tabs: [] };
+          const displayLabels = typeof getPerspectiveDisplayLabels === 'function' ? getPerspectiveDisplayLabels(activeP) : normalizeLabels(activeP?.labels);
+          const categoryMeta = displayLabels.find(l => areCategoryLabelsEquivalent(l.name, activeCategoryFilter, activeP)) || { name: activeCategoryFilter, description: '', color: '' };
+          const focusHtml = renderCategoryFocusView(matchedGroup, categoryMeta);
+          renderIfChanged(openTabsMissionsEl, focusHtml, 'missions');
+        } else {
+          const emptyTitle = typeof t === 'function' ? t('tabs.all_closed_title') : 'All tabs closed';
+          const emptyDesc = typeof t === 'function' ? t('tabs.all_closed_desc') : 'Clean workspace';
+          const emptyHtml = `
+            <div class="missions-empty-state">
+              <div class="empty-title">${escapeHtml(emptyTitle)}</div>
+              <div class="empty-subtitle">${escapeHtml(emptyDesc)}</div>
+            </div>
+          `;
+          renderIfChanged(openTabsMissionsEl, emptyHtml, 'missions');
+        }
       }
-      renderPerspectiveTagsBar([]);
+      renderPerspectiveTagsBar(domainGroups);
     }
     openTabsSection.style.display = 'block';
   }
@@ -4371,6 +4611,13 @@ if (typeof document !== 'undefined') {
 
   const action = actionEl.dataset.action || (actionEl.id === 'archiveToggle' ? 'toggle-archive' : '');
 
+  // ---- Toggle Theme (Dark / Light) ----
+  if (action === 'toggle-theme') {
+    e.preventDefault();
+    await toggleTheme();
+    return;
+  }
+
   // ---- Switch active perspective tab ----
   if (action === 'switch-perspective') {
     const pid = actionEl.dataset.perspectiveId;
@@ -4380,12 +4627,150 @@ if (typeof document !== 'undefined') {
     return;
   }
 
+  // ---- Switch or clear Category Focus Filter ----
+  if (action === 'filter-category') {
+    e.stopPropagation();
+    const cat = actionEl.dataset.category || actionEl.dataset.targetTag;
+    await selectCategoryFilter(cat === 'all' ? null : cat);
+    return;
+  }
+
+  // ---- Toggle collapse/expand of empty category tags (Option 2) ----
+  if (action === 'toggle-empty-tags') {
+    e.stopPropagation();
+    showEmptyCategoryTags = !showEmptyCategoryTags;
+    resetRenderCache('perspectiveTags');
+    renderPerspectiveTagsBar(domainGroups);
+    return;
+  }
+
+  // ---- Close all tabs in a focused category group ----
+  if (action === 'close-category-tabs') {
+    const categoryName = actionEl.dataset.category;
+    if (!categoryName) return;
+    const activeP = (typeof currentPerspectives !== 'undefined' && Array.isArray(currentPerspectives))
+      ? currentPerspectives.find(p => p.id === activePerspectiveId)
+      : null;
+    const group = domainGroups.find(g => {
+      const name = g.label || g.domain;
+      return typeof name === 'string' && areCategoryLabelsEquivalent(name, categoryName, activeP);
+    });
+    if (!group || !Array.isArray(group.tabs) || group.tabs.length === 0) return;
+
+    if (!actionEl.classList.contains('confirming')) {
+      actionEl.classList.add('confirming');
+      const originalHtml = actionEl.innerHTML;
+      actionEl.dataset.originalHtml = originalHtml;
+      const count = group.tabs.length;
+      const confirmText = typeof t === 'function'
+        ? (count === 1 ? t('tabs.close_single_tab_confirm') : t('tabs.close_group_confirm', { count }))
+        : (count === 1 ? 'Close tab?' : `Close ${count} tabs?`);
+      actionEl.innerHTML = `${ICONS.close} ${escapeHtml(confirmText)}`;
+      const timeout = setTimeout(() => {
+        if (actionEl.isConnected) {
+          actionEl.classList.remove('confirming');
+          actionEl.innerHTML = actionEl.dataset.originalHtml || originalHtml;
+          delete actionEl.dataset.originalHtml;
+          delete actionEl.dataset.confirmTimeout;
+        }
+      }, 4000);
+      actionEl.dataset.confirmTimeout = String(timeout);
+      return;
+    }
+
+    if (actionEl.dataset.inFlight) return;
+    actionEl.dataset.inFlight = 'true';
+
+    try {
+      if (actionEl.dataset.confirmTimeout) {
+        clearTimeout(parseInt(actionEl.dataset.confirmTimeout, 10));
+        delete actionEl.dataset.confirmTimeout;
+      }
+      actionEl.classList.remove('confirming');
+
+      let validTabIds = [];
+      let closedTabsSnapshot = [];
+      if (typeof chrome !== 'undefined' && chrome.tabs?.query && chrome.tabs?.remove) {
+        try {
+          const currentTabs = await chrome.tabs.query({});
+          const liveMap = new Map(currentTabs.map(t => [t.id, t]));
+          const liveIds = new Set(liveMap.keys());
+          validTabIds = group.tabs.map(t => t.id).filter(id => liveIds.has(id));
+          closedTabsSnapshot = validTabIds.map(id => {
+            const t = liveMap.get(id);
+            return { url: t?.url, title: t?.title };
+          }).filter(t => Boolean(t.url));
+
+          if (validTabIds.length > 0) {
+            try {
+              await chrome.tabs.remove(validTabIds);
+            } catch (removeErr) {
+              await Promise.all(validTabIds.map(id => chrome.tabs.remove(id).catch(() => null)));
+            }
+          }
+        } catch (err) {
+          console.warn('[tab-out] Failed to close category tabs:', err);
+        }
+      }
+
+      if (closedTabsSnapshot.length > 0) {
+        pushUndoAction({
+          description: typeof t === 'function'
+            ? t('undo.closed_tabs_from', { count: closedTabsSnapshot.length, domain: categoryName })
+            : `Closed ${closedTabsSnapshot.length} tab${closedTabsSnapshot.length !== 1 ? 's' : ''} from ${categoryName}`,
+          onUndo: async () => {
+            try {
+              const validUrls = closedTabsSnapshot.filter(t => t.url && isRealTabUrl(t.url));
+              await Promise.all(validUrls.map(t => chrome.tabs.create({ url: t.url, active: false }).catch(() => null)));
+              await fetchOpenTabs();
+              await renderAll();
+              showToast(typeof t === 'function'
+                ? t('toast.tabs_restored_domain', { count: closedTabsSnapshot.length, domain: categoryName })
+                : `Restored ${closedTabsSnapshot.length} tabs from ${categoryName}`);
+            } catch (err) {
+              console.warn('[tab-out] Failed to restore category tabs:', err);
+            }
+          }
+        });
+      } else if (validTabIds.length > 0) {
+        showToast(typeof t === 'function'
+          ? t('toast.tabs_closed_domain', { count: validTabIds.length, domain: categoryName })
+          : `Closed ${validTabIds.length} tab${validTabIds.length !== 1 ? 's' : ''} from ${categoryName}`);
+      }
+
+      if (validTabIds.length > 0) {
+        const closedIdSet = new Set(validTabIds);
+        for (const g of domainGroups) {
+          if (Array.isArray(g.tabs)) {
+            g.tabs = g.tabs.filter(t => !closedIdSet.has(t.id));
+          }
+        }
+        activeCategoryDomainGroups = [];
+      }
+
+      document.querySelectorAll('#openTabsMissions .mission-card').forEach(c => {
+        animateCardOut(c);
+      });
+
+      await fetchOpenTabs();
+      await selectCategoryFilter(null);
+      await renderAll();
+    } finally {
+      delete actionEl.dataset.inFlight;
+    }
+    return;
+  }
+
   // ---- Scroll to specific category card from pill click ----
   if (action === 'scroll-to-tag') {
     e.stopPropagation();
     const targetTag = actionEl.dataset.targetTag;
     if (!targetTag) return;
-    const targetCard = Array.from(document.querySelectorAll('.mission-card')).find(c => c.dataset.category === targetTag) || null;
+    const targetLower = targetTag.toLowerCase().trim();
+    const targetCard = Array.from(document.querySelectorAll('.mission-card')).find(c => {
+      const cat = c.dataset?.category;
+      return typeof cat === 'string' && cat.toLowerCase().trim() === targetLower;
+    }) || null;
     if (targetCard) {
       if (typeof targetCard.scrollIntoView === 'function') {
         const isReduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
@@ -4394,9 +4779,13 @@ if (typeof document !== 'undefined') {
       targetCard.classList.remove('target-highlight');
       void targetCard.offsetWidth;
       targetCard.classList.add('target-highlight');
-      setTimeout(() => {
+      if (targetCard.dataset.highlightTimer) {
+        clearTimeout(Number(targetCard.dataset.highlightTimer));
+      }
+      const timerId = setTimeout(() => {
         try { targetCard?.classList.remove('target-highlight'); } catch {}
       }, 1300);
+      targetCard.dataset.highlightTimer = String(timerId);
     }
     return;
   }
@@ -4413,7 +4802,10 @@ if (typeof document !== 'undefined') {
 
     if (overlay) {
       const form = document.getElementById('perspectiveForm');
-      if (form) form.dataset.templateIcon = '';
+      if (form) {
+        form.dataset.templateIcon = '';
+        form.dataset.templateId = '';
+      }
       if (modalTitle) modalTitle.textContent = typeof t === 'function' ? t('modal.perspective.title_new') : 'New Perspective';
       if (editId) editId.value = '';
       if (nameInput) nameInput.value = '';
@@ -4450,13 +4842,23 @@ if (typeof document !== 'undefined') {
       const pDisplayName = getPerspectiveDisplayName(p);
       if (modalTitle) modalTitle.textContent = typeof t === 'function' ? t('modal.perspective.title_edit', { name: pDisplayName }) : `Edit Perspective: ${p.name}`;
       if (editId) editId.value = p.id;
-      if (nameInput) nameInput.value = p.name;
-      if (delBtn) delBtn.style.display = p.isSystem ? 'none' : 'inline-flex';
-      const isDefault = DEFAULT_PERSPECTIVES.some(dp => dp.id === p.id && !dp.isSystem) || Boolean(PERSPECTIVE_TEMPLATES && p.id && !isDangerousKey(p.id) && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, p.id));
+      const tplKey = resolvePerspectiveTemplateKey(p);
+      const isDefault = DEFAULT_PERSPECTIVES.some(dp => dp.id === p.id && !dp.isSystem) || Boolean(tplKey && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, tplKey));
       if (resetBtn) resetBtn.style.display = isDefault ? 'inline-flex' : 'none';
+      const form = document.getElementById('perspectiveForm');
+      if (form) {
+        form.dataset.templateId = tplKey || '';
+        form.dataset.templateIcon = p.icon || '';
+      }
+      if (nameInput) {
+        nameInput.value = (tplKey && pDisplayName) ? pDisplayName : p.name;
+      }
+      if (delBtn) delBtn.style.display = p.isSystem ? 'none' : 'inline-flex';
       if (tagsContainer) {
         tagsContainer.innerHTML = '';
-        const normalized = normalizeLabels(p.labels);
+        const currentLang = typeof TabOutI18n !== 'undefined' ? TabOutI18n.getLanguage() : 'en';
+        const displayLabels = getPerspectiveDisplayLabels(p, currentLang);
+        const normalized = normalizeLabels(displayLabels);
         const userTags = normalized.filter(t => !isFallbackLabel(t.name));
         if (userTags.length > 0) {
           userTags.forEach(tag => addTagRowToModal(tag.name, tag.description, false, tag.color));
@@ -4474,10 +4876,12 @@ if (typeof document !== 'undefined') {
   if (action === 'reset-perspective-default') {
     e.stopPropagation();
     const editId = document.getElementById('perspectiveEditId')?.value;
-    let defaultP = DEFAULT_PERSPECTIVES.find(dp => dp.id === editId);
-    if (!defaultP && typeof PERSPECTIVE_TEMPLATES !== 'undefined' && editId && !isDangerousKey(editId) && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, editId)) {
+    const existingP = currentPerspectives.find(p => p.id === editId);
+    const tplKey = resolvePerspectiveTemplateKey(existingP) || editId;
+    let defaultP = DEFAULT_PERSPECTIVES.find(dp => dp.id === tplKey);
+    if (!defaultP && typeof PERSPECTIVE_TEMPLATES !== 'undefined' && tplKey && !isDangerousKey(tplKey) && Object.prototype.hasOwnProperty.call(PERSPECTIVE_TEMPLATES, tplKey)) {
       const currentLang = typeof TabOutI18n !== 'undefined' ? TabOutI18n.getLanguage() : 'en';
-      defaultP = getPerspectiveTemplate(editId, currentLang);
+      defaultP = getPerspectiveTemplate(tplKey, currentLang);
     }
     if (!defaultP) return;
 
@@ -4508,7 +4912,10 @@ if (typeof document !== 'undefined') {
       nameInput.value = tpl.name;
     }
     const form = document.getElementById('perspectiveForm');
-    if (form) form.dataset.templateIcon = tpl.icon;
+    if (form) {
+      form.dataset.templateIcon = tpl.icon;
+      form.dataset.templateId = templateType;
+    }
     if (tagsContainer) {
       tagsContainer.innerHTML = '';
       const userTags = tpl.labels.filter(t => !isFallbackLabel(t.name));
@@ -4616,10 +5023,6 @@ if (typeof document !== 'undefined') {
     if (!confirmed) return;
 
     currentPerspectives = currentPerspectives.filter(p => p.id !== editId);
-    if (activeClassificationAbortController) {
-      try { activeClassificationAbortController.abort(); } catch {}
-      activeClassificationAbortController = null;
-    }
     if (activePerspectiveId === editId) {
       activePerspectiveId = 'domain';
     }
@@ -4629,18 +5032,7 @@ if (typeof document !== 'undefined') {
     setLocalSettingLock(400);
     await enqueueStorageWrite(async () => {
       await chrome.storage.local.remove([`tabClassificationCache_${editId}`]);
-      const freshRes = await chrome.storage.local.get(['tabClassificationCache']);
-      const freshMonolithic = (freshRes.tabClassificationCache && typeof freshRes.tabClassificationCache === 'object' && !Array.isArray(freshRes.tabClassificationCache))
-        ? freshRes.tabClassificationCache
-        : {};
-      if (editId && !isDangerousKey(editId)) {
-        delete freshMonolithic[editId];
-      }
-      await chrome.storage.local.set({
-        perspectives: currentPerspectives,
-        activePerspectiveId,
-        tabClassificationCache: freshMonolithic
-      });
+      await chrome.storage.local.set({ perspectives: currentPerspectives, activePerspectiveId });
     });
 
     const overlay = document.getElementById('perspectiveModalOverlay');
@@ -4790,12 +5182,18 @@ if (typeof document !== 'undefined') {
       }
       await fetchOpenTabs();
 
-      // Reconcile in-memory domainGroups
+      // Reconcile in-memory domainGroups & activeCategoryDomainGroups
       if (removedId) {
         for (const g of domainGroups) {
           g.tabs = g.tabs.filter(t => t.id !== removedId);
         }
         domainGroups = domainGroups.filter(g => g.tabs.length > 0);
+        if (typeof activeCategoryDomainGroups !== 'undefined' && Array.isArray(activeCategoryDomainGroups)) {
+          for (const g of activeCategoryDomainGroups) {
+            g.tabs = g.tabs.filter(t => t.id !== removedId);
+          }
+          activeCategoryDomainGroups = activeCategoryDomainGroups.filter(g => g.tabs.length > 0);
+        }
       }
 
       const parentCard = chip ? chip.closest('.mission-card') : null;
@@ -4901,12 +5299,18 @@ if (typeof document !== 'undefined') {
       }
       await fetchOpenTabs();
 
-      // Reconcile in-memory domainGroups
+      // Reconcile in-memory domainGroups & activeCategoryDomainGroups
       if (removedId) {
         for (const g of domainGroups) {
           g.tabs = g.tabs.filter(t => t.id !== removedId);
         }
         domainGroups = domainGroups.filter(g => g.tabs.length > 0);
+        if (typeof activeCategoryDomainGroups !== 'undefined' && Array.isArray(activeCategoryDomainGroups)) {
+          for (const g of activeCategoryDomainGroups) {
+            g.tabs = g.tabs.filter(t => t.id !== removedId);
+          }
+          activeCategoryDomainGroups = activeCategoryDomainGroups.filter(g => g.tabs.length > 0);
+        }
       }
 
       const parentCard = chip ? chip.closest('.mission-card') : null;
@@ -5082,7 +5486,7 @@ if (typeof document !== 'undefined') {
   // ---- Close all tabs in a domain group ----
   if (action === 'close-domain-tabs') {
     const domain = actionEl.dataset.domain;
-    const group  = domainGroups.find(g => g.domain === domain);
+    const group  = domainGroups.find(g => g.domain === domain) || (activeCategoryDomainGroups ? activeCategoryDomainGroups.find(g => g.domain === domain) : null);
     if (!group) return;
 
     if (!actionEl.classList.contains('confirming')) {
@@ -5146,6 +5550,23 @@ if (typeof document !== 'undefined') {
       // Remove from in-memory groups
       const idx = domainGroups.indexOf(group);
       if (idx !== -1) domainGroups.splice(idx, 1);
+      const catIdx = activeCategoryDomainGroups.indexOf(group);
+      if (catIdx !== -1) activeCategoryDomainGroups.splice(catIdx, 1);
+      if (validTabIds.length > 0) {
+        const closedIdSet = new Set(validTabIds);
+        for (const g of domainGroups) {
+          if (Array.isArray(g.tabs)) {
+            g.tabs = g.tabs.filter(t => !closedIdSet.has(t.id));
+          }
+        }
+        for (const g of activeCategoryDomainGroups) {
+          if (Array.isArray(g.tabs)) {
+            g.tabs = g.tabs.filter(t => !closedIdSet.has(t.id));
+          }
+        }
+        domainGroups = domainGroups.filter(g => !g.isSemantic || (Array.isArray(g.tabs) && g.tabs.length > 0));
+        activeCategoryDomainGroups = activeCategoryDomainGroups.filter(g => Array.isArray(g.tabs) && g.tabs.length > 0);
+      }
       if (domain) expandedDomains.delete(domain);
 
       const groupLabel = group.domain === '__landing-pages__' ? (typeof t === 'function' ? t('tabs.landing_pages') : 'Homepages') : (group.label || friendlyDomain(group.domain));
@@ -5212,7 +5633,7 @@ if (typeof document !== 'undefined') {
         console.warn('[tab-out] Failed to close duplicates:', err);
       }
 
-      // Reconcile in-memory domainGroups with live openTabs
+      // Reconcile in-memory domainGroups & activeCategoryDomainGroups with live openTabs
       try {
         const liveTabs = await chrome.tabs.query({});
         const liveIds = new Set(liveTabs.map(t => t.id));
@@ -5220,6 +5641,12 @@ if (typeof document !== 'undefined') {
           g.tabs = g.tabs.filter(t => liveIds.has(t.id));
         }
         domainGroups = domainGroups.filter(g => g.tabs.length > 0);
+        if (typeof activeCategoryDomainGroups !== 'undefined' && Array.isArray(activeCategoryDomainGroups)) {
+          for (const g of activeCategoryDomainGroups) {
+            g.tabs = g.tabs.filter(t => liveIds.has(t.id));
+          }
+          activeCategoryDomainGroups = activeCategoryDomainGroups.filter(g => g.tabs.length > 0);
+        }
       } catch {}
 
       // Hide the dedup button
@@ -5524,6 +5951,8 @@ if (typeof document !== 'undefined') {
 // Keep dashboard synchronized with external tab events, visibility changes & window focus
 let syncTimeout = null;
 let isSyncing = false;
+// Set when storage changes arrive while hidden; forces a full sync on the next visibilitychange.
+let pendingHiddenRefresh = false;
 
 const performSync = async (fullSync = false) => {
   // Re-check document visibility at execution time: skip background render if tab is hidden
@@ -5582,15 +6011,22 @@ const performSync = async (fullSync = false) => {
   }
 };
 
-// Coalesce rapid events (e.g. visibilitychange + focus) into a single execution
+// Coalesce rapid events (e.g. visibilitychange + focus) into a single execution. A steady stream
+// of events (a tab retitling every 100ms) would otherwise postpone the sync forever.
+const SYNC_MAX_WAIT_MS = 1000;
+let syncBurstStart = 0;
 const debouncedSync = (delay = 250, fullSync = false) => {
   clearTimeout(syncTimeout);
   if (fullSync) pendingFullSync = true;
+  const now = Date.now();
+  if (!syncBurstStart) syncBurstStart = now;
+  const wait = Math.max(0, Math.min(delay, syncBurstStart + SYNC_MAX_WAIT_MS - now));
   syncTimeout = setTimeout(() => {
+    syncBurstStart = 0;
     const isFull = pendingFullSync;
     pendingFullSync = false;
     performSync(isFull);
-  }, delay);
+  }, wait);
 };
 
 debouncedSyncRef = debouncedSync;
@@ -5602,7 +6038,7 @@ if (typeof chrome !== 'undefined' && chrome.tabs) {
   chrome.tabs.onCreated?.addListener(() => debouncedSync(250, false));
   chrome.tabs.onRemoved?.addListener(() => debouncedSync(250, false));
   chrome.tabs.onUpdated?.addListener((tabId, changeInfo) => {
-    if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title || changeInfo.favIconUrl) {
+    if (changeInfo.status === 'complete' || changeInfo.url || changeInfo.title) {
       debouncedSync(250, false);
     }
   });
@@ -5639,9 +6075,51 @@ if (typeof chrome !== 'undefined' && chrome.tabs) {
           pendingSessionsSync = false;
           renderRecentlyClosedSection().catch(() => {});
         }
-        debouncedSync(0, false);
+        const needsFullSync = pendingHiddenRefresh;
+        pendingHiddenRefresh = false;
+        debouncedSync(0, needsFullSync);
       }
     });
+  }
+}
+
+/**
+ * saveApiKeySettings(rawKey)
+ *
+ * Persists the OpenRouter key and unblocks AI. Failure cooldowns and backoff are only reset
+ * when the key actually changed, so re-saving the same key is not a way to hammer Jev.
+ */
+async function saveApiKeySettings(rawKey) {
+  const key = String(rawKey || '').trim().replace(/[^\x21-\x7E]/g, '');
+  const keyChanged = key !== openRouterApiKey;
+  aiAuthBlocked = false;
+  openRouterApiKey = key;
+  if (key && keyChanged) {
+    for (const pCache of Object.values(tabClassificationCache)) {
+      if (!pCache || typeof pCache !== 'object') continue;
+      for (const entry of Object.values(pCache)) {
+        if (entry && !AI_SOURCES.includes(getCacheSource(entry))) {
+          delete entry.lastAiAttempt;
+          delete entry.cooldownMs;
+          delete entry.aiAttempts;
+        }
+      }
+    }
+  }
+  setLocalSettingLock(400);
+  const storagePayload = { openRouterApiKey: key, classifierApiKey: key, aiAuthBlocked: false, lastBlockedApiKey: null };
+  if (!isJevActive() && activePerspectiveId !== 'domain') {
+    activePerspectiveId = 'domain';
+    storagePayload.activePerspectiveId = 'domain';
+  }
+  await enqueueStorageWrite(async () => {
+    await chrome.storage.local.set(storagePayload);
+  });
+  if (key && keyChanged) {
+    jevBlockedUntil = 0;
+    try {
+      await chrome.runtime?.sendMessage?.({ type: 'tabout-jev-reset' });
+    } catch {}
   }
 }
 
@@ -5661,117 +6139,46 @@ async function handleStorageOnChanged(changes, areaName) {
         }
       }
 
-      // Check for partitioned tab classification cache updates first!
-      const incomingByPid = {};
-      let hasPartitionChanges = false;
-      for (const [key, change] of Object.entries(changes)) {
-        if (key.startsWith('tabClassificationCache_')) {
-          const pid = key.slice('tabClassificationCache_'.length);
-          if (isDangerousKey(pid)) continue;
-          if (change.newValue && typeof change.newValue === 'object' && !Array.isArray(change.newValue)) {
-            incomingByPid[pid] = change.newValue;
-            hasPartitionChanges = true;
-          } else if (change.newValue === undefined) {
-            delete tabClassificationCache[pid];
-            hasPartitionChanges = true;
-          }
-        }
-      }
-      // Only process monolithic if no specific partition key changes were broadcast
-      if (!hasPartitionChanges && changes.tabClassificationCache?.newValue && typeof changes.tabClassificationCache.newValue === 'object' && !Array.isArray(changes.tabClassificationCache.newValue)) {
-        for (const [k, v] of Object.entries(changes.tabClassificationCache.newValue)) {
-          if (!isDangerousKey(k) && v && typeof v === 'object' && !Array.isArray(v)) {
-            incomingByPid[k] = v;
-          }
-        }
-      }
-
+      // The service worker writes one partition per perspective; a removed partition was wiped.
+      // Partitions this dashboard never loaded are skipped: they are read on demand when shown.
       let hasRelevantChanges = false;
-      if (Object.keys(incomingByPid).length > 0) {
-        const realTabs = typeof getRealTabs === 'function' ? getRealTabs() : [];
-        const openTabNormUrls = new Set(realTabs.map(t => normalizeUrlForCache(t.url) || t.url || ''));
-        const activePid = activePerspectiveId;
-
-        for (const [pid, pCache] of Object.entries(incomingByPid)) {
-          if (isDangerousKey(pid)) continue;
-          if (!tabClassificationCache[pid]) {
-            tabClassificationCache[pid] = {};
-          }
-          if (pCache && typeof pCache === 'object' && !Array.isArray(pCache)) {
-            for (const [urlKey, entry] of Object.entries(pCache)) {
-              if (isDangerousKey(urlKey)) continue;
-              const prev = tabClassificationCache[pid][urlKey];
-              const prevSource = getCacheSource(prev);
-              const newSource = getCacheSource(entry);
-
-              // Never overwrite completed AI decisions ('ai' or 'ai-low-confidence') with non-AI placeholders
-              if (['ai', 'ai-low-confidence'].includes(prevSource) && !['ai', 'ai-low-confidence'].includes(newSource)) {
-                continue;
-              }
-
-              // Never downgrade a high-confidence AI decision to low confidence
-              if (prevSource === 'ai' && newSource === 'ai-low-confidence') {
-                continue;
-              }
-
-              // If both are 'ai', keep higher confidence if existing has better confidence
-              if (prevSource === 'ai' && newSource === 'ai' &&
-                  typeof prev?.confidence === 'number' && typeof entry?.confidence === 'number' &&
-                  entry.confidence < prev.confidence) {
-                continue;
-              }
-
-              const prevLabel = getCacheLabel(prev);
-              const newLabel = getCacheLabel(entry);
-
-              // Never downgrade a valid non-fallback label to a fallback label via a non-AI placeholder update
-              if (prevLabel && !isFallbackLabel(prevLabel) && isFallbackLabel(newLabel) && !['ai', 'ai-low-confidence'].includes(newSource)) {
-                continue;
-              }
-
-              const normalizedEntry = typeof entry === 'string'
-                ? { label: entry, source: 'ai', timestamp: Date.now() }
-                : (entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {});
-
-              // Avoid allocating new objects and triggering GC churn if entry is identical to prev
-              if (prev &&
-                  prev.label === normalizedEntry.label &&
-                  prev.source === normalizedEntry.source &&
-                  prev.confidence === normalizedEntry.confidence &&
-                  prev.timestamp === normalizedEntry.timestamp &&
-                  prev.secondaryLabel === normalizedEntry.secondaryLabel) {
-                continue;
-              }
-
-              tabClassificationCache[pid][urlKey] = {
-                ...(prev && typeof prev === 'object' && !Array.isArray(prev) ? prev : {}),
-                ...normalizedEntry,
-                secondaryLabel: normalizedEntry.secondaryLabel !== undefined ? normalizedEntry.secondaryLabel : prev?.secondaryLabel
-              };
-
-              if (pid === activePid && newLabel && newLabel !== prevLabel && openTabNormUrls.has(urlKey)) {
-                hasRelevantChanges = true;
-              }
-            }
-          }
+      let openTabNormUrls = null;
+      for (const [key, change] of Object.entries(changes)) {
+        if (!key.startsWith('tabClassificationCache_')) continue;
+        const pid = key.slice('tabClassificationCache_'.length);
+        if (isDangerousKey(pid)) continue;
+        if (change.newValue === undefined) {
+          delete tabClassificationCache[pid];
+          continue;
         }
-
-        for (const pid of Object.keys(incomingByPid)) {
-          if (tabClassificationCache[pid] && Object.keys(tabClassificationCache[pid]).length > 1000) {
-            tabClassificationCache[pid] = pruneClassificationCache(tabClassificationCache[pid], 1000);
-          }
+        if (!Object.prototype.hasOwnProperty.call(tabClassificationCache, pid)) continue;
+        const changedKeys = mergeClassificationEntries(pid, change.newValue);
+        if (pid === activePerspectiveId && changedKeys.length) {
+          openTabNormUrls = openTabNormUrls || new Set(getRealTabs().map(t => normalizeUrlForCache(t.url) || t.url || ''));
+          if (changedKeys.some(k => openTabNormUrls.has(k))) hasRelevantChanges = true;
         }
       }
 
+      // An activePerspectiveId equal to ours is the echo of this tab's own switchPerspective write.
       const hasActualSettingChange =
         (changes.perspectives && changes.perspectives.oldValue !== changes.perspectives.newValue) ||
-        (changes.activePerspectiveId && changes.activePerspectiveId.oldValue !== changes.activePerspectiveId.newValue) ||
+        (changes.activePerspectiveId && changes.activePerspectiveId.newValue !== activePerspectiveId) ||
         (changes.openRouterApiKey && changes.openRouterApiKey.oldValue !== changes.openRouterApiKey.newValue) ||
         (changes.classifierApiKey && changes.classifierApiKey.oldValue !== changes.classifierApiKey.newValue) ||
         (changes.aiAuthBlocked && changes.aiAuthBlocked.oldValue !== changes.aiAuthBlocked.newValue);
 
+      if (changes.activePerspectiveId && changes.activePerspectiveId.oldValue !== changes.activePerspectiveId.newValue) {
+        activeCategoryFilter = null;
+      }
+
+      // A hidden dashboard only marks itself stale; the reload and render happen when it becomes visible.
+      const isHidden = typeof document !== 'undefined' && document.hidden === true;
+
       if (hasActualSettingChange) {
-        if (!isLocalSettingUpdate) {
+        if (isHidden) {
+          isPerspectivesLoaded = false;
+          pendingHiddenRefresh = true;
+        } else if (!isLocalSettingUpdate) {
           await loadPerspectiveSettings(true);
           await renderStaticDashboard();
           didRenderDashboard = true;
@@ -5780,8 +6187,17 @@ async function handleStorageOnChanged(changes, areaName) {
         }
       }
 
+      if (changes[THEME_STORAGE_KEY] && changes[THEME_STORAGE_KEY].newValue) {
+        const nextTheme = changes[THEME_STORAGE_KEY].newValue;
+        if (nextTheme !== currentTheme) {
+          await setTheme(nextTheme);
+        }
+      }
+
       if (hasRelevantChanges && !didRenderDashboard) {
-        if (!isBackgroundClassifying) {
+        if (isHidden) {
+          pendingHiddenRefresh = true;
+        } else if (!isBackgroundClassifying) {
           await renderStaticDashboard({ skipBackgroundAi: true, inMemoryOnly: true });
         }
       }
@@ -5804,10 +6220,6 @@ if (typeof document !== 'undefined') {
     if (isSubmittingPerspective) return;
     isSubmittingPerspective = true;
     try {
-      if (activeClassificationAbortController) {
-        try { activeClassificationAbortController.abort(); } catch {}
-        activeClassificationAbortController = null;
-      }
       const editId = document.getElementById('perspectiveEditId')?.value;
       const name = (document.getElementById('perspectiveNameInput')?.value.trim() || '').slice(0, 50);
       const rows = Array.from(document.querySelectorAll('#perspectiveTagsContainer .tag-row'));
@@ -5840,9 +6252,11 @@ if (typeof document !== 'undefined') {
       return;
     }
 
-    // Always automatically attach the immutable default 'Khác' fallback tag
+    // Always automatically attach the immutable default fallback tag
+    const activeLang = typeof TabOutI18n !== 'undefined' ? TabOutI18n.getLanguage() : 'en';
+    const fallbackName = getFallbackLabelName(activeLang);
     labels.push({
-      name: 'Khác',
+      name: fallbackName,
       description: '',
       color: ''
     });
@@ -5860,10 +6274,15 @@ if (typeof document !== 'undefined') {
 
         semanticsChanged = getSemanticSignature(existing.labels) !== getSemanticSignature(labels);
 
+        const formEl = document.getElementById('perspectiveForm');
+        const appliedTemplateId = formEl?.dataset?.templateId;
+        const appliedTemplateIcon = formEl?.dataset?.templateIcon;
         const idx = currentPerspectives.findIndex(p => p.id === editId);
         if (idx !== -1) {
           currentPerspectives[idx] = {
             ...existing,
+            icon: appliedTemplateIcon || existing.icon || 'folder',
+            templateId: appliedTemplateId !== undefined ? (appliedTemplateId || null) : (existing.templateId || null),
             name,
             labels
           };
@@ -5877,9 +6296,12 @@ if (typeof document !== 'undefined') {
         }
       } else {
       const newId = 'p_' + Date.now().toString(36);
-      const templateIcon = document.getElementById('perspectiveForm')?.dataset.templateIcon;
+      const formEl = document.getElementById('perspectiveForm');
+      const templateIcon = formEl?.dataset.templateIcon;
+      const appliedTemplateId = formEl?.dataset.templateId;
       currentPerspectives.push({
         id: newId,
+        templateId: appliedTemplateId || null,
         name,
         icon: templateIcon || 'folder',
         isSystem: false,
@@ -5897,18 +6319,7 @@ if (typeof document !== 'undefined') {
       if (editId && !isDangerousKey(editId) && semanticsChanged) {
         await chrome.storage.local.remove([`tabClassificationCache_${editId}`]);
       }
-      const freshRes = await chrome.storage.local.get(['tabClassificationCache']);
-      const freshMonolithic = (freshRes.tabClassificationCache && typeof freshRes.tabClassificationCache === 'object' && !Array.isArray(freshRes.tabClassificationCache))
-        ? freshRes.tabClassificationCache
-        : {};
-      if (editId && !isDangerousKey(editId) && semanticsChanged) {
-        delete freshMonolithic[editId];
-      }
-      await chrome.storage.local.set({
-        perspectives: currentPerspectives,
-        activePerspectiveId,
-        tabClassificationCache: freshMonolithic
-      });
+      await chrome.storage.local.set({ perspectives: currentPerspectives, activePerspectiveId });
     });
 
     const overlay = document.getElementById('perspectiveModalOverlay');
@@ -5929,35 +6340,7 @@ if (typeof document !== 'undefined') {
   // API Key configuration form
   document.getElementById('apiKeyForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (activeClassificationAbortController) {
-      try { activeClassificationAbortController.abort(); } catch {}
-      activeClassificationAbortController = null;
-    }
-    const key = (document.getElementById('apiKeyInput')?.value || '').trim().replace(/[^\x21-\x7E]/g, '');
-    aiAuthBlocked = false;
-    openRouterApiKey = key;
-    if (key) {
-      for (const pid of Object.keys(tabClassificationCache)) {
-        const pCache = tabClassificationCache[pid];
-        if (pCache && typeof pCache === 'object') {
-          for (const entry of Object.values(pCache)) {
-            if (entry && !['ai', 'ai-low-confidence'].includes(getCacheSource(entry))) {
-              delete entry.lastAiAttempt;
-              delete entry.cooldownMs;
-            }
-          }
-        }
-      }
-    }
-    setLocalSettingLock(400);
-    const storagePayload = { openRouterApiKey: key, classifierApiKey: key, aiAuthBlocked: false, lastBlockedApiKey: null };
-    if (!isJevActive() && activePerspectiveId !== 'domain') {
-      activePerspectiveId = 'domain';
-      storagePayload.activePerspectiveId = 'domain';
-    }
-    await enqueueStorageWrite(async () => {
-      await chrome.storage.local.set(storagePayload);
-    });
+    await saveApiKeySettings(document.getElementById('apiKeyInput')?.value || '');
 
     // Check language change from select
     const langSelect = document.getElementById('settingsLanguageSelect');
@@ -6069,6 +6452,13 @@ if (typeof document !== 'undefined') {
       const activeEl = document.activeElement;
       if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT' || activeEl.isContentEditable)) {
         activeEl.blur();
+        return;
+      }
+
+      // If in category focus view, Escape returns to all categories (View chung)
+      if (activeCategoryFilter !== null) {
+        e.preventDefault();
+        selectCategoryFilter(null);
         return;
       }
 
@@ -6301,9 +6691,93 @@ if (typeof document !== 'undefined') {
 }
 
 /* ----------------------------------------------------------------
+   THEME SUBSYSTEM (Light & Default Dark Mode)
+   Adhering strictly to Vercel Brand Guidelines (vercel-brand.css).
+   ---------------------------------------------------------------- */
+const THEME_STORAGE_KEY = 'tabout_theme';
+let currentTheme = 'dark';
+
+function getTheme() {
+  return currentTheme;
+}
+
+function updateThemeToggleUI(theme) {
+  if (typeof document === 'undefined') return;
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn) return;
+
+  const isDark = (theme === 'dark');
+  const labelKey = isDark ? 'theme.toggle_light' : 'theme.toggle_dark';
+  const fallbackLabel = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+  const resolvedLabel = (typeof t === 'function' ? t(labelKey) : fallbackLabel) || fallbackLabel;
+
+  btn.setAttribute('aria-label', resolvedLabel);
+  btn.setAttribute('title', resolvedLabel);
+  btn.setAttribute('data-i18n-title', labelKey);
+  btn.setAttribute('data-i18n-aria-label', labelKey);
+  btn.setAttribute('data-current-theme', theme);
+  if (btn.dataset) btn.dataset.currentTheme = theme;
+
+  // Render Sun icon for dark mode (click to go light) and Moon icon for light mode (click to go dark)
+  if (isDark) {
+    btn.innerHTML = `<svg class="theme-icon theme-icon-sun" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" />
+    </svg>`;
+  } else {
+    btn.innerHTML = `<svg class="theme-icon theme-icon-moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
+    </svg>`;
+  }
+}
+
+async function setTheme(theme) {
+  const normalized = (theme === 'light') ? 'light' : 'dark';
+  currentTheme = normalized;
+
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.setAttribute('data-theme', normalized);
+  }
+
+  updateThemeToggleUI(normalized);
+
+  if (typeof chrome !== 'undefined' && chrome.storage?.local?.set) {
+    try {
+      await chrome.storage.local.set({ [THEME_STORAGE_KEY]: normalized });
+    } catch (_) {}
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('tabout:theme-changed', { detail: { theme: normalized } }));
+    } catch (_) {}
+  }
+
+  return normalized;
+}
+
+async function toggleTheme() {
+  const nextTheme = (currentTheme === 'dark') ? 'light' : 'dark';
+  return await setTheme(nextTheme);
+}
+
+async function initTheme() {
+  let storedTheme = 'dark';
+  if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+    try {
+      const res = await chrome.storage.local.get(THEME_STORAGE_KEY);
+      if (res && res[THEME_STORAGE_KEY] === 'light') {
+        storedTheme = 'light';
+      }
+    } catch (_) {}
+  }
+  return await setTheme(storedTheme);
+}
+
+/* ----------------------------------------------------------------
    INITIALIZE
    ---------------------------------------------------------------- */
 async function initDashboard() {
+  await initTheme();
   if (typeof TabOutI18n !== 'undefined') {
     if (typeof TabOutI18n.init === 'function') {
       try {
@@ -6311,6 +6785,7 @@ async function initDashboard() {
       } catch (_) {}
     }
     TabOutI18n.applyI18n();
+    updateThemeToggleUI(currentTheme);
     const currentLang = TabOutI18n.getLanguage();
     document.querySelectorAll('.lang-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.lang === currentLang);
@@ -6352,6 +6827,7 @@ if (typeof document !== 'undefined') {
       if (typeof TabOutI18n !== 'undefined') {
         TabOutI18n.applyI18n(document);
       }
+      updateThemeToggleUI(currentTheme);
       const dateEl = document.getElementById('dateDisplay');
       if (dateEl) dateEl.textContent = getDateDisplay();
       await renderAll();
@@ -6370,6 +6846,11 @@ if (typeof module !== 'undefined' && module.exports) {
     PERSPECTIVE_TEMPLATES,
     PERSPECTIVE_ICONS,
     getPerspectiveTemplate,
+    getPerspectiveDisplayName,
+    getPerspectiveDisplayLabels,
+    isUnmodifiedTemplateLabels,
+    resolvePerspectiveTemplateKey,
+    getFallbackLabelName,
     renderMissionCard,
     TAG_PALETTE,
     resolveTagColor,
@@ -6395,18 +6876,19 @@ if (typeof module !== 'undefined' && module.exports) {
     undoStack,
     pushUndoAction,
     triggerUndo,
-    getDomainFallbackLabel,
-    schedulePerspectivePrewarm,
     initDashboard,
     MULTI_TOPIC_DOMAINS,
     extractHostname,
-    saveClassificationCacheAtomic,
-    prewarmMultiPerspective,
+    mergeClassificationEntries,
+    get jevBlockedUntil() { return jevBlockedUntil; },
+    set jevBlockedUntil(v) { jevBlockedUntil = Number(v) || 0; },
     buildOverflowChips,
     buildChoiceCriteria,
     handleStorageOnChanged,
+    saveApiKeySettings,
     isAiEligibleUrl,
     renderPerspectiveTagsBar,
+    sortGroupsByPerspectiveLabels,
     renderDeferredColumn,
     stripUrlQueryParams,
     updateHeaderAndStats,
@@ -6464,6 +6946,7 @@ if (typeof module !== 'undefined' && module.exports) {
     safeUrl,
     stripCredentialsFromUrl,
     stripUserInfoFallback,
+    stripTitleNoise,
     isDangerousKey,
     mutateDeferred,
     saveTabForLater,
@@ -6472,7 +6955,30 @@ if (typeof module !== 'undefined' && module.exports) {
     unarchiveSavedTab,
     deleteSavedTab,
     dismissSavedTab,
-    renderDeferredColumn
+    renderDeferredColumn,
+    initTheme,
+    setTheme,
+    getTheme,
+    toggleTheme,
+    updateThemeToggleUI,
+    get activeCategoryFilter() { return activeCategoryFilter; },
+    set activeCategoryFilter(v) { activeCategoryFilter = v ? String(v).trim() : null; },
+    selectCategoryFilter,
+    renderCategoryFocusView,
+    groupTabsByDomain,
+    get activeCategoryDomainGroups() { return activeCategoryDomainGroups; },
+    set activeCategoryDomainGroups(v) { activeCategoryDomainGroups = v; },
+    get domainGroups() { return domainGroups; },
+    set domainGroups(v) { domainGroups = Array.isArray(v) ? v : []; },
+    renderOpenTabsHeaderActions,
+    areCategoryLabelsEquivalent,
+    checkAndShowEmptyState,
+    get showEmptyCategoryTags() { return showEmptyCategoryTags; },
+    set showEmptyCategoryTags(v) { showEmptyCategoryTags = Boolean(v); },
+    setShowEmptyCategoryTags: (v) => { showEmptyCategoryTags = Boolean(v); },
+    updateTagsBarScrollMask,
+    initTagsBarInteractions,
+    scrollTagIntoView
   };
 }
 

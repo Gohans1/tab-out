@@ -216,7 +216,7 @@ describe("classifyTabs — Incognito Privacy & Data Protection", () => {
       ];
       const perspective = { id: "topic", labels: [{ name: "Dev" }] };
 
-      const result = await classifyTabs(tabs, perspective, true);
+      const result = await classifyTabs(tabs, perspective);
       // Incognito tab must be classified locally in-memory without calling external AI
       expect(result["https://secret-site.com/"]).toBeDefined();
       expect(result["https://secret-site.com/"].source).toBe("local");
@@ -272,7 +272,14 @@ describe("classifyTabs — Incognito Privacy & Data Protection", () => {
         }
       },
       runtime: {
-        sendMessage: async () => ({ claimed: ["topic:https://github.com/facebook/react"] })
+        id: "ext",
+        getURL: (p = "") => `chrome-extension://ext/${p}`,
+        // Dashboard messages reach the real service worker, which calls the (fake) Jev endpoint.
+        sendMessage: (m: any) => new Promise(resolve => {
+          const worker = require("../extension/background.js");
+          const sender = { id: "ext", url: "chrome-extension://ext/index.html" };
+          if (!worker.handleJevMessage(m, sender, resolve)) resolve(undefined);
+        })
       }
     };
 
@@ -282,7 +289,7 @@ describe("classifyTabs — Incognito Privacy & Data Protection", () => {
       ];
       const perspective = { id: "topic", labels: [{ name: "Dev" }] };
 
-      const result = await classifyTabs(tabs, perspective, true);
+      const result = await classifyTabs(tabs, perspective);
       expect(result["https://github.com/facebook/react"]).toBeDefined();
       expect(result["https://github.com/facebook/react"].label).toBe("Dev");
       expect(displayedWhileInFlight).toBe(true);

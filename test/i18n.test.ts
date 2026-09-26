@@ -98,6 +98,14 @@ describe("i18n Internationalization Subsystem", () => {
       expect(i18n.t("header.active_tabs")).toBe("Thẻ đang hoạt động");
     });
 
+    test("settings modal labels reflect Jev API as core requirement without 'Optional'", () => {
+      const i18n = instantiateI18n();
+      i18n.setLanguage("en");
+      expect(i18n.t("modal.settings.api_key_label")).not.toContain("Optional");
+      i18n.setLanguage("vi");
+      expect(i18n.t("modal.settings.api_key_label")).not.toContain("Tùy chọn");
+    });
+
     test("parameter interpolation and safe prototype isolation", () => {
       const i18n = instantiateI18n();
       i18n.setLanguage("en");

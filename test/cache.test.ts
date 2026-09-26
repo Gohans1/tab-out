@@ -92,8 +92,8 @@ describe("isDangerousKey — Prototype Pollution Defense", () => {
   });
 });
 
-describe("saveClassificationCacheAtomic — Storage Resilience & Dirty Checks", () => {
-  const { saveClassificationCacheAtomic } = require("../extension/app.js");
+describe("saveClassificationCacheAtomic (service worker) — Storage Resilience & Dirty Checks", () => {
+  const { saveClassificationCacheAtomic } = require("../extension/background.js");
 
   test("skips storage.set when no actual changes occur (dirty check)", async () => {
     let setCalled = false;
@@ -185,31 +185,18 @@ describe("saveClassificationCacheAtomic — Storage Resilience & Dirty Checks", 
     }
   });
 
-  test("delta merge upgrades local placeholder to higher quality AI decision from concurrent disk write", async () => {
+  test("an AI answer already stored is never replaced by a local fallback", async () => {
     let savedData: any = null;
-    let callCount = 0;
     const originalChrome = (globalThis as any).chrome;
     (globalThis as any).chrome = {
       storage: {
         local: {
-          get: async () => {
-            callCount++;
-            if (callCount === 1) {
-              // Initial read: holds local placeholder
-              return {
-                tabClassificationCache_topic: {
-                  "https://concurrent.com": { label: "Other", source: "local", timestamp: 100 }
-                },
-                perspectives: [{ id: "topic", name: "Topic", labels: [] }]
-              };
-            }
-            // Second read (freshCheck during delta merge): concurrent worker wrote high-confidence AI decision
-            return {
-              tabClassificationCache_topic: {
-                "https://concurrent.com": { label: "Tech", source: "ai", confidence: 0.95, timestamp: 200 }
-              }
-            };
-          },
+          get: async () => ({
+            tabClassificationCache_topic: {
+              "https://answered.com": { label: "Tech", source: "ai", confidence: 0.95, timestamp: 200 }
+            },
+            perspectives: [{ id: "topic", name: "Topic", labels: [] }]
+          }),
           set: async (obj: any) => {
             savedData = obj;
           }
@@ -218,22 +205,20 @@ describe("saveClassificationCacheAtomic — Storage Resilience & Dirty Checks", 
     };
 
     try {
-      // Adding a new entry triggers write
       await saveClassificationCacheAtomic("topic", {
+        "https://answered.com": { label: "Other", source: "local", lastAiAttempt: 300, timestamp: 300 },
         "https://newitem.com": { label: "Work", source: "ai", timestamp: 150 }
       });
       expect(savedData).toBeDefined();
-      const entry = savedData.tabClassificationCache_topic["https://concurrent.com"];
-      // Must upgrade to the concurrent disk AI entry
+      const entry = savedData.tabClassificationCache_topic["https://answered.com"];
       expect(entry.source).toBe("ai");
       expect(entry.label).toBe("Tech");
-      expect(entry.confidence).toBe(0.95);
     } finally {
       (globalThis as any).chrome = originalChrome;
     }
   });
 
-  test("delta merge does not resurrect pruned keys from disk", async () => {
+  test("pruning to 1000 entries drops the oldest answer", async () => {
     let savedData: any = null;
     const originalChrome = (globalThis as any).chrome;
 
@@ -275,7 +260,7 @@ describe("saveClassificationCacheAtomic — Storage Resilience & Dirty Checks", 
     }
   });
 
-  test("delta merge aborts writing partition if perspective was deleted concurrently", async () => {
+  test("does not write a partition for a perspective that was deleted", async () => {
     let savedData: any = null;
     const originalChrome = (globalThis as any).chrome;
 
@@ -305,7 +290,7 @@ describe("saveClassificationCacheAtomic — Storage Resilience & Dirty Checks", 
     }
   });
 
-  test("delta merge handles malformed perspectives arrays with null/undefined elements gracefully", async () => {
+  test("handles malformed perspectives arrays with null/undefined elements gracefully", async () => {
     let savedData: any = null;
     const originalChrome = (globalThis as any).chrome;
 

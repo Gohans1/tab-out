@@ -6,10 +6,9 @@ const {
   stripUrlQueryParams,
   isRealTabUrl,
   smartTitle,
-  getFaviconUrl
+  getFaviconUrl,
+  stripTitleNoise
 } = require("../extension/app.js");
-
-const { stripTitleNoise } = require("../extension/background.js");
 
 describe("extractHostname", () => {
   test("extracts clean hostname from standard URLs", () => {
@@ -136,7 +135,7 @@ describe("getFaviconUrl — MV3 Favicon Protocol", () => {
   });
 });
 
-describe("stripTitleNoise — Background Title Sanitizer", () => {
+describe("stripTitleNoise — Title Sanitizer sent to Jev", () => {
   test("strips unread counts and notifications from title", () => {
     expect(stripTitleNoise("(5) Inbox - Work Email")).toBe("Inbox - Work Email");
     expect(stripTitleNoise("(99+) Notifications / Feed")).toBe("Notifications / Feed");
@@ -211,26 +210,4 @@ describe("stripCredentialsFromUrl — Sensitive Credential Scrubber", () => {
   });
 });
 
-describe("stripUserInfoFallback — Authority Isolation Helper", () => {
-  const { stripUserInfoFallback: appStrip } = require("../extension/app.js");
-  const { stripUserInfoFallback: bgStrip } = require("../extension/background.js");
-
-  test("both app.js and background.js export equivalent stripUserInfoFallback functions", () => {
-    expect(typeof appStrip).toBe("function");
-    expect(typeof bgStrip).toBe("function");
-
-    const testUrls = [
-      "https://user:pass@invalid%domain/path",
-      "https://invalid%domain/users/@bob",
-      "https://user:p@ss@invalid%domain/dir/@file?ref=@main#@frag",
-      "not-a-url",
-      "",
-      null as any
-    ];
-
-    for (const u of testUrls) {
-      expect(appStrip(u)).toBe(bgStrip(u));
-    }
-  });
-});
 

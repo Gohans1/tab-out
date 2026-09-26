@@ -1,12 +1,12 @@
 /**
- * background.js — Service Worker for Badge Updates
+ * background.js — Service Worker
  *
- * Chrome's "always-on" background script for Tab Out.
- * Its only job: keep the toolbar badge showing the current open tab count.
+ * Two jobs:
+ *   1. Keep the toolbar badge showing the current open tab count.
+ *   2. Run every Jev classification request and own the classification cache,
+ *      so dashboards that close mid-request never waste a paid answer.
  *
- * Since we no longer have a server, we query chrome.tabs directly.
  * The badge counts real web tabs (skipping chrome:// and extension pages).
- *
  * Color coding gives a quick at-a-glance health signal:
  *   Green  (#3d7a4a) → 1–10 tabs  (focused, manageable)
  *   Amber  (#b8892e) → 11–20 tabs (getting busy)
@@ -86,135 +86,6 @@ async function updateBadge() {
   }
 }
 
-// ─── Background AI Pre-Classification Engine ────────────────────────────────
-
-const TRACKING_PARAMS = new Set([
-  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-  'fbclid', 'gclid', 'msclkid', 'mc_eid', '_ga',
-  'ref', 'source', 'feature', 'si', 't',
-  'oq', 'aqs', 'sourceid', 'ved', 'ei',
-  'token', 'auth', 'key', 'apikey', 'api_key', 'secret', 'access_token', 'id_token', 'code', 'password',
-  'jwt', 'bearer', 'access_key', 'key_id', 'state', 'code_challenge', 'code_verifier', 'sig', 'signature',
-  'auth_token', 'session_token', 'session_id', 'sid', 'session', 'ticket', 'sso', 'assertion', 'client_secret',
-  'refresh_token', 'credential'
-]);
-
-
-function isAiEligibleUrl(url) {
-  if (!url || typeof url !== 'string') return false;
-  if (!url.startsWith('http://') && !url.startsWith('https://')) return false;
-  try {
-    const parsed = new URL(url);
-    const h = parsed.hostname.toLowerCase().replace(/\.+$/, '');
-    if (
-      h === '169.254.169.254' ||
-      h.startsWith('169.254.') ||
-      h === '[fd00:ec2::254]' ||
-      h.includes('a9fe:a9fe') ||
-      h.includes('169.254.') ||
-      h === 'metadata.google.internal' ||
-      h.endsWith('.metadata.google.internal') ||
-      h === 'metadata' ||
-      h === '100.100.100.200' ||
-      h === '[::ffff:6464:64c8]' ||
-      h.includes('6464:64c8') ||
-      /^\[fe[89ab][0-9a-f]:/i.test(h)
-    ) {
-      return false;
-    }
-    if (parsed.username || parsed.password) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function stripUserInfoFallback(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') return '';
-  const protoIdx = rawUrl.indexOf('://');
-  if (protoIdx !== -1) {
-    const withoutProto = rawUrl.slice(protoIdx + 3);
-    const pathOrQueryIdx = withoutProto.search(/[\/?#]/);
-    const authority = pathOrQueryIdx === -1 ? withoutProto : withoutProto.slice(0, pathOrQueryIdx);
-    const atIdx = authority.lastIndexOf('@');
-    if (atIdx !== -1) {
-      const afterAuth = pathOrQueryIdx === -1 ? '' : withoutProto.slice(pathOrQueryIdx);
-      return rawUrl.slice(0, protoIdx + 3) + authority.slice(atIdx + 1) + afterAuth;
-    }
-  }
-  return rawUrl;
-}
-
-const bgNormalizedUrlCache = new Map();
-
-function normalizeUrlForCache(url) {
-  if (!url || typeof url !== 'string') return '';
-  const trimmed = url.trim();
-  if (!trimmed) return '';
-  if (bgNormalizedUrlCache.has(trimmed)) {
-    const cached = bgNormalizedUrlCache.get(trimmed);
-    bgNormalizedUrlCache.delete(trimmed);
-    bgNormalizedUrlCache.set(trimmed, cached);
-    return cached;
-  }
-  try {
-    const parsed = new URL(trimmed);
-    parsed.hash = '';
-    parsed.username = '';
-    parsed.password = '';
-
-    if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
-      parsed.pathname = parsed.pathname.slice(0, -1);
-    }
-
-    const searchParams = parsed.searchParams;
-    let modified = false;
-    for (const key of Array.from(searchParams.keys())) {
-      const lowerKey = key.toLowerCase();
-      const val = searchParams.get(key) || '';
-      if (
-        TRACKING_PARAMS.has(lowerKey) ||
-        lowerKey.startsWith('utm_') ||
-        lowerKey.includes('token') ||
-        lowerKey.includes('secret') ||
-        lowerKey.includes('auth') ||
-        lowerKey.includes('password') ||
-        lowerKey.includes('session') ||
-        lowerKey.includes('signature') ||
-        val.length > 80 ||
-        val.startsWith('ey')
-      ) {
-        searchParams.delete(key);
-        modified = true;
-      }
-    }
-    searchParams.sort();
-    const newSearch = searchParams.toString();
-    parsed.search = newSearch ? `?${newSearch}` : '';
-    const res = parsed.toString();
-    if (bgNormalizedUrlCache.size > 2000) {
-      const it = bgNormalizedUrlCache.keys();
-      for (let i = 0; i < 200; i++) {
-        const nextKey = it.next().value;
-        if (nextKey) bgNormalizedUrlCache.delete(nextKey);
-      }
-    }
-    bgNormalizedUrlCache.set(trimmed, res);
-    return res;
-  } catch {
-    let safeFallback = stripUserInfoFallback(trimmed).split('?')[0].split('#')[0];
-    if (bgNormalizedUrlCache.size > 2000) {
-      const it = bgNormalizedUrlCache.keys();
-      for (let i = 0; i < 200; i++) {
-        const nextKey = it.next().value;
-        if (nextKey) bgNormalizedUrlCache.delete(nextKey);
-      }
-    }
-    bgNormalizedUrlCache.set(trimmed, safeFallback);
-    return safeFallback;
-  }
-}
-
 const DANGEROUS_KEYS = new Set([
   '__proto__', 'constructor', 'prototype',
   'toString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf',
@@ -228,827 +99,489 @@ function isDangerousKey(key) {
   return DANGEROUS_KEYS.has(trimmed) || trimmed in Object.prototype;
 }
 
-function stripUrlQueryParams(url) {
-  if (!url || typeof url !== 'string') return '';
-  try {
-    const parsed = new URL(url);
-    parsed.search = '';
-    parsed.hash = '';
-    parsed.username = '';
-    parsed.password = '';
-    return parsed.toString();
-  } catch {
-    const clean = url.split('?')[0].split('#')[0];
-    return stripUserInfoFallback(clean);
-  }
+// ─── Jev classification worker ───────────────────────────────────────────────
+// Every Jev request runs here, not in a dashboard: a new-tab dashboard is often navigated away
+// within a second, which would throw away a request already sent and billed. Being the only
+// writer of the classification partitions also leaves no write races to reconcile.
+
+const JEV_ENDPOINT = 'https://openrouter.ai/api/alpha/decisions';
+const JEV_MODEL = '~typesafe/jev-latest';
+const JEV_TIMEOUT_MS = 10000;
+const JEV_MAX_BATCH = 24;
+// Jev's context is 32k tokens and the criteria repeat in every question, so batches are cut by size.
+const JEV_BATCH_CHAR_BUDGET = 48000;
+const AI_BASE_COOLDOWN_MS = 15000;
+const AI_MAX_COOLDOWN_MS = 60 * 60 * 1000;
+const CLASSIFICATION_CACHE_MAX = 1000;
+const MAX_CACHE_KEY_LENGTH = 2048;
+const AI_SOURCES = ['ai', 'ai-low-confidence'];
+
+const jevInFlight = new Set();
+let jevQueue = Promise.resolve();
+let jevBlockedUntil = 0;
+
+function _resetJevWorkerForTesting() {
+  jevInFlight.clear();
+  jevQueue = Promise.resolve();
+  jevBlockedUntil = 0;
 }
 
-function stripTitleNoise(title) {
-  if (!title) return '';
-  title = title.replace(/^\(\d+\+?\)\s*/, '');
-  title = title.replace(/\s*\([\d,]+\+?\)\s*/g, ' ');
-  title = title.replace(/\s*[-\u2010-\u2015]\s*[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '');
-  title = title.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '');
-  title = title.replace(/\s+on X:\s*/, ': ');
-  title = title.replace(/\s*\/\s*X\s*$/, '');
-  return title.trim();
-}
+const partitionKey = pid => `tabClassificationCache_${pid}`;
+const sanitizeApiKey = key => (typeof key === 'string' ? key : '').trim().replace(/[^\x21-\x7E]/g, '');
+const clip = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
 
 function getCacheSource(entry) {
   if (!entry) return '';
-  if (typeof entry === 'string') return 'ai';
-  if (typeof entry === 'object' && entry.source) return entry.source;
-  return 'local';
+  if (typeof entry === 'string') return 'ai'; // legacy string cache
+  return entry.source || 'local';
 }
 
-const FALLBACK_TAG_REGEX = /^(khác|other|misc|linh tinh|chưa phân loại)(\s*[\/\(\-]\s*(chưa phân loại|unclassified|other|khác|misc|tổng hợp)\)?)?$/iu;
+const isAiEntry = entry => AI_SOURCES.includes(getCacheSource(entry));
 
-function isFallbackLabel(name) {
-  if (!name || typeof name !== 'string') return false;
-  return FALLBACK_TAG_REGEX.test(name.trim());
+// Same rule the dashboard uses: a tab needs Jev unless it has an AI answer or is cooling down.
+function needsJev(entry, now) {
+  if (!entry) return true;
+  if (isAiEntry(entry)) return false;
+  return !(entry.lastAiAttempt && now - entry.lastAiAttempt < (entry.cooldownMs || AI_BASE_COOLDOWN_MS));
 }
 
-function buildChoiceCriteria(perspective) {
-  const criteria = Object.create(null);
-  if (!perspective || !Array.isArray(perspective.labels)) return criteria;
-  let hasOther = false;
-  for (const item of perspective.labels) {
-    const rawName = (typeof item === 'string' ? item : item?.name || '').trim();
-    if (!rawName || isDangerousKey(rawName)) continue;
-    if (isFallbackLabel(rawName)) hasOther = true;
-    const name = rawName.slice(0, 50);
-    const desc = typeof item === 'string' ? '' : (item?.description || '').slice(0, 300);
-    if (item && typeof item === 'object' && item.rubric && typeof item.rubric === 'object') {
-      criteria[name] = item.rubric;
-    } else {
-      criteria[name] = desc || name;
+// Doubles the retry cooldown on every consecutive failure of the same URL, capped at one hour.
+function nextAiBackoff(prevEntry, baseMs) {
+  const aiAttempts = ((prevEntry && prevEntry.aiAttempts) || 0) + 1;
+  return { aiAttempts, cooldownMs: Math.min(baseMs * 2 ** (aiAttempts - 1), AI_MAX_COOLDOWN_MS) };
+}
+
+// Fingerprint of a perspective's tags; null when the perspective no longer exists.
+function labelsSignature(perspectives, pid) {
+  const p = Array.isArray(perspectives) ? perspectives.find(x => x && typeof x === 'object' && x.id === pid) : null;
+  if (!p) return null;
+  return JSON.stringify((Array.isArray(p.labels) ? p.labels : []).map(l =>
+    typeof l === 'string' ? [l, ''] : [l?.name || '', l?.description || '']));
+}
+
+function readPartition(raw) {
+  const clean = {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw)) {
+      if (!isDangerousKey(k) && v) clean[k] = v;
     }
   }
-  if (!hasOther) {
-    criteria['Khác'] = 'Khác';
-  }
-  if (Object.keys(criteria).length < 2) {
-    criteria['Chung'] = 'Chung';
-  }
-  return criteria;
+  return clean;
 }
 
-function extractHostname(url) {
-  if (!url || typeof url !== 'string') return '';
-  try {
-    const start = url.indexOf('://');
-    if (start === -1) return '';
-    const withoutProto = url.slice(start + 3);
-    const pathOrQueryIdx = withoutProto.search(/[\/?#]/);
-    const authority = pathOrQueryIdx === -1 ? withoutProto : withoutProto.slice(0, pathOrQueryIdx);
-    const atIdx = authority.lastIndexOf('@');
-    const hostWithPort = atIdx === -1 ? authority : authority.slice(atIdx + 1);
-    let host;
-    if (hostWithPort.startsWith('[')) {
-      const closeBracketIdx = hostWithPort.indexOf(']');
-      host = closeBracketIdx !== -1 ? hostWithPort.slice(0, closeBracketIdx + 1) : hostWithPort;
-    } else {
-      const colonIdx = hostWithPort.indexOf(':');
-      host = colonIdx === -1 ? hostWithPort : hostWithPort.slice(0, colonIdx);
-    }
-    return host.toLowerCase().replace(/^www\./, '');
-  } catch {
-    return '';
-  }
+// Keeps the newest answers, but never drops open tabs: they would be paid for again.
+function pruneClassificationCache(cache, maxEntries = CLASSIFICATION_CACHE_MAX, keepKeys = []) {
+  const entries = Object.entries(cache);
+  if (entries.length <= maxEntries) return cache;
+  const keep = new Set(keepKeys);
+  const ts = entry => (entry && typeof entry === 'object' && entry.timestamp) || 0;
+  entries.sort((a, b) => (keep.has(b[0]) - keep.has(a[0])) || ts(b[1]) - ts(a[1]));
+  return Object.fromEntries(entries.slice(0, maxEntries));
 }
 
-let bgStorageWriteMutex = Promise.resolve();
-
-function enqueueBgStorageWrite(fn) {
-  const next = bgStorageWriteMutex.then(fn, fn);
-  bgStorageWriteMutex = next;
-  return next;
-}
-
-async function saveBgClassificationCache(updates) {
-  if (!updates || Object.keys(updates).length === 0) return;
-  return enqueueBgStorageWrite(async () => {
-    try {
-      const partitionKeys = Object.keys(updates).map(pid => `tabClassificationCache_${pid}`);
-      const latestStorage = await chrome.storage.local.get(['perspectives', ...partitionKeys]);
-      const validPerspectiveIds = new Set((latestStorage.perspectives || []).filter(p => p && p.id && !isDangerousKey(p.id)).map(p => p.id));
-      const storageToSet = {};
-
-      const initialDiskKeysByPartition = new Map();
-      let totalChanges = false;
-      for (const [pid, newItems] of Object.entries(updates)) {
-        if (isDangerousKey(pid)) continue;
-        if (Array.isArray(latestStorage.perspectives) && !validPerspectiveIds.has(pid)) {
-          continue;
-        }
-        const partitionKey = `tabClassificationCache_${pid}`;
-        let partitionCache = latestStorage[partitionKey];
-        if (!partitionCache || typeof partitionCache !== 'object' || Array.isArray(partitionCache)) {
-          partitionCache = {};
-        } else {
-          partitionCache = { ...partitionCache };
-        }
-        initialDiskKeysByPartition.set(partitionKey, new Set(Object.keys(partitionCache)));
-
-        let partitionChanged = false;
-        for (const [urlKey, entry] of Object.entries(newItems)) {
-          if (isDangerousKey(urlKey)) continue;
-          const existing = partitionCache[urlKey];
-          const existingSource = getCacheSource(existing);
-          const entrySource = getCacheSource(entry);
-          // A completed AI decision must not be replaced by a stale local placeholder.
-          if (existing && ['ai', 'ai-low-confidence'].includes(existingSource) &&
-              !['ai', 'ai-low-confidence'].includes(entrySource)) {
-            continue;
-          }
-          // A completed high-confidence AI decision must not be downgraded to low confidence.
-          if (existing && existingSource === 'ai' && entrySource === 'ai-low-confidence') {
-            continue;
-          }
-          if (existing && existingSource === 'ai' && entrySource === 'ai' &&
-              typeof existing?.confidence === 'number' && typeof entry?.confidence === 'number' &&
-              entry.confidence < existing.confidence) {
-            continue;
-          }
-
-          const normalizedEntry = typeof entry === 'string'
-            ? { label: entry, source: 'ai', timestamp: Date.now() }
-            : (entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {});
-
-          // Skip redundant write if identical
-          if (existing &&
-              existing.label === normalizedEntry.label &&
-              existing.source === normalizedEntry.source &&
-              existing.confidence === normalizedEntry.confidence &&
-              existing.secondaryLabel === normalizedEntry.secondaryLabel) {
-            continue;
-          }
-
-          partitionCache[urlKey] = {
-            ...(existing && typeof existing === 'object' && !Array.isArray(existing) ? existing : {}),
-            ...normalizedEntry,
-            secondaryLabel: normalizedEntry.secondaryLabel !== undefined ? normalizedEntry.secondaryLabel : existing?.secondaryLabel
-          };
-          partitionChanged = true;
-        }
-
-        if (Object.keys(partitionCache).length > 1000) {
-          const prePruneLen = Object.keys(partitionCache).length;
-          const pEntries = Object.entries(partitionCache);
-          const hasTimes = pEntries.some(e => e[1] && typeof e[1] === 'object' && typeof e[1].timestamp === 'number');
-          if (hasTimes) {
-            pEntries.sort((a, b) => ((b[1]?.timestamp || 0) - (a[1]?.timestamp || 0)));
-            partitionCache = Object.fromEntries(pEntries.slice(0, 1000));
-          } else {
-            partitionCache = Object.fromEntries(pEntries.slice(Math.max(0, pEntries.length - 1000)));
-          }
-          if (Object.keys(partitionCache).length !== prePruneLen) {
-            partitionChanged = true;
-          }
-        }
-
-        if (partitionChanged) {
-          storageToSet[partitionKey] = partitionCache;
-          totalChanges = true;
-        }
-      }
-
-      if (totalChanges && Object.keys(storageToSet).length > 0) {
-        // Delta merge: Reload fresh storage to avoid clobbering any concurrent entries from dashboard tab
-        const freshDisk = await chrome.storage.local.get(['perspectives', ...Object.keys(storageToSet)]);
-        if (Array.isArray(freshDisk.perspectives)) {
-          const freshValidIds = new Set(
-            freshDisk.perspectives
-              .filter(p => p && typeof p === 'object' && p.id && !isDangerousKey(p.id))
-              .map(p => p.id)
-          );
-          for (const partKey of Object.keys(storageToSet)) {
-            const pid = partKey.slice('tabClassificationCache_'.length);
-            if (!freshValidIds.has(pid)) {
-              delete storageToSet[partKey];
-            }
-          }
-        }
-        for (const [partKey, memoryCache] of Object.entries(storageToSet)) {
-          const diskCache = freshDisk[partKey];
-          const initialKeys = initialDiskKeysByPartition.get(partKey) || new Set();
-          if (diskCache && typeof diskCache === 'object' && !Array.isArray(diskCache)) {
-            for (const [k, v] of Object.entries(diskCache)) {
-              if (isDangerousKey(k)) continue;
-              const current = memoryCache[k];
-              if (!current) {
-                // Only merge keys that were newly created on disk during this transaction
-                // Do NOT resurrect keys that were intentionally pruned!
-                if (!initialKeys.has(k)) {
-                  memoryCache[k] = v;
-                }
-              } else {
-                // Provenance & precedence check: upgrade placeholder/lower-confidence to higher-confidence decision from disk
-                const currentSrc = getCacheSource(current);
-                const diskSrc = getCacheSource(v);
-                if (['ai', 'ai-low-confidence'].includes(diskSrc) && !['ai', 'ai-low-confidence'].includes(currentSrc)) {
-                  memoryCache[k] = v;
-                } else if (diskSrc === 'ai' && currentSrc === 'ai-low-confidence') {
-                  memoryCache[k] = v;
-                } else if (diskSrc === 'ai' && currentSrc === 'ai' && typeof v?.confidence === 'number' && typeof current?.confidence === 'number' && v.confidence > current.confidence) {
-                  memoryCache[k] = v;
-                }
-              }
-            }
-          }
-          if (Object.keys(memoryCache).length > 1000) {
-            const pEntries = Object.entries(memoryCache);
-            const hasTimes = pEntries.some(e => e[1] && typeof e[1] === 'object' && typeof e[1].timestamp === 'number');
-            if (hasTimes) {
-              pEntries.sort((a, b) => ((b[1]?.timestamp || 0) - (a[1]?.timestamp || 0)));
-              storageToSet[partKey] = Object.fromEntries(pEntries.slice(0, 1000));
-            } else {
-              storageToSet[partKey] = Object.fromEntries(pEntries.slice(Math.max(0, pEntries.length - 1000)));
-            }
-          }
-        }
-        await chrome.storage.local.set(storageToSet);
-      }
-    } catch {}
-  });
-}
-
-// ─── Debounced Multi-Perspective Background Preclassifier ────────────────────
-
-const pendingPreclassifyTabs = new Map();
-const aiReservations = new Map();
-const deferredPreclassifyTabs = new Map();
-
-// Hydrate reservations from session storage to preserve stampede protection across service worker suspensions
-let hydrationPromise = null;
-
-function hydrateAiReservationsFromSession() {
-  if (typeof chrome !== 'undefined' && chrome.storage?.session) {
-    hydrationPromise = chrome.storage.session.get(['aiReservations']).then(res => {
-      if (res?.aiReservations && typeof res.aiReservations === 'object' && !Array.isArray(res.aiReservations)) {
-        const now = Date.now();
-        for (const [k, r] of Object.entries(res.aiReservations)) {
-          if (!isDangerousKey(k) && r && typeof r === 'object' && r.until > now && !aiReservations.has(k)) {
-            aiReservations.set(k, r);
-          }
-        }
-      }
-    }).catch(() => {}).finally(() => {
-      hydrationPromise = null;
-    });
-    return hydrationPromise;
-  }
-  return Promise.resolve();
-}
-
-hydrateAiReservationsFromSession();
-
-function _resetAiReservationsForTesting() {
-  aiReservations.clear();
-  deferredPreclassifyTabs.clear();
-  pendingPreclassifyTabs.clear();
-  if (sessionReservationSaveTimer) {
-    clearTimeout(sessionReservationSaveTimer);
-    sessionReservationSaveTimer = null;
-  }
-  sessionReservationResolvers = [];
-  hydrationPromise = null;
-}
-
-function reservationMapKey(key) {
-  if (key.length <= 500) return key;
-  let hash = 2166136261;
-  for (let i = 0; i < key.length; i++) {
-    hash = Math.imul(hash ^ key.charCodeAt(i), 16777619);
-  }
-  return `${key.slice(0, 180)}:${key.length}:${(hash >>> 0).toString(16)}:${key.slice(-180)}`;
-}
-
-let sessionReservationSaveTimer = null;
-let sessionReservationResolvers = [];
-
-function persistReservationsToSession(immediate = false) {
-  if (typeof chrome === 'undefined' || !chrome.storage?.session) return Promise.resolve();
-  if (sessionReservationSaveTimer) {
-    clearTimeout(sessionReservationSaveTimer);
-    sessionReservationSaveTimer = null;
-  }
-  const doSave = async () => {
-    try {
-      await chrome.storage.session.set({
-        aiReservations: Object.fromEntries(aiReservations)
-      });
-    } catch {}
-    const resolvers = sessionReservationResolvers;
-    sessionReservationResolvers = [];
-    for (const r of resolvers) {
-      try { r(); } catch {}
-    }
-  };
-  if (immediate) {
-    return doSave();
-  }
-  return new Promise((resolve) => {
-    sessionReservationResolvers.push(resolve);
-    sessionReservationSaveTimer = setTimeout(() => {
-      sessionReservationSaveTimer = null;
-      doSave();
-    }, 50);
-  });
-}
-
-function updateAiReservations(message) {
-  const now = Date.now();
-  const claimed = [];
-  const released = [];
-
-  // Evict expired reservations to prevent unbounded memory growth and unblock waiting tabs
-  for (const [k, r] of aiReservations) {
-    if (r && r.until <= now) {
-      aiReservations.delete(k);
-      released.push(r.rawKey || k);
-    }
-  }
-
-  for (const key of message.keys) {
-    if (typeof key !== 'string' || !key || isDangerousKey(key)) continue;
-    const mapKey = reservationMapKey(key);
-    const reservation = aiReservations.get(mapKey);
-    if (message.type === 'tabout-ai-release') {
-      if (reservation?.owner === message.owner) {
-        aiReservations.delete(mapKey);
-        released.push(key);
-      }
-    } else if (!reservation || reservation.until <= now || reservation.owner === message.owner) {
-      aiReservations.set(mapKey, { owner: message.owner, until: now + 30000, rawKey: key });
-      claimed.push(key);
-    }
-  }
-
-  if (aiReservations.size > 200) {
-    for (const [k, r] of aiReservations) {
-      aiReservations.delete(k);
-      released.push(r?.rawKey || k);
-      if (aiReservations.size <= 100) break;
-    }
-  }
-  if (released.length && deferredPreclassifyTabs.size) {
-    const releasedKeys = new Set(released);
-    for (const [tabId, deferred] of deferredPreclassifyTabs) {
-      if (deferred.keys.some(key => releasedKeys.has(key))) {
-        deferredPreclassifyTabs.delete(tabId);
-        if (!pendingPreclassifyTabs.has(tabId)) pendingPreclassifyTabs.set(tabId, deferred.tab);
-      }
-    }
-    if (pendingPreclassifyTabs.size && !isProcessingPreclassifications) {
-      processPendingPreclassifications().catch(() => {});
-    }
-  }
-  if (deferredPreclassifyTabs.size > 100) {
-    const it = deferredPreclassifyTabs.keys();
-    for (let i = 0; i < 20; i++) {
-      const k = it.next().value;
-      if (k) deferredPreclassifyTabs.delete(k);
-    }
-  }
-
-  const savePromise = persistReservationsToSession();
-
-  return { claimed, savePromise };
-}
-
-function handleAiReservationMessage(message, sender, sendResponse) {
-  if (message?.type !== 'tabout-ai-claim' && message?.type !== 'tabout-ai-release') return false;
-  if (typeof chrome !== 'undefined' && chrome.runtime?.id && sender?.id !== chrome.runtime.id) return false;
-  // Ensure message comes from an internal extension page, not injected content scripts or untrusted origins
-  const extensionOrigin = typeof chrome !== 'undefined' && chrome.runtime?.getURL ? chrome.runtime.getURL('') : '';
-  if (!extensionOrigin || !sender?.url || !sender.url.startsWith(extensionOrigin)) return false;
-  if (typeof message.owner !== 'string' || !message.owner.trim() || message.owner.length > 128 || !Array.isArray(message.keys) || message.keys.length > 1000) {
-    sendResponse({ claimed: [] });
-    return false;
-  }
-
-  const processAndRespond = async () => {
-    const { claimed } = updateAiReservations(message);
-    try {
-      await persistReservationsToSession(true);
-    } catch {}
-    sendResponse({ claimed });
-  };
-
-  if (hydrationPromise) {
-    hydrationPromise.then(processAndRespond).catch(processAndRespond);
-    return true; // Keep IPC channel open for async hydration
-  }
-
-  processAndRespond();
+// A completed AI answer is never replaced by a local guess, nor by a less confident answer.
+function isUpgrade(existing, incoming) {
+  if (!existing) return true;
+  const oldSrc = getCacheSource(existing);
+  const newSrc = getCacheSource(incoming);
+  if (AI_SOURCES.includes(oldSrc) && !AI_SOURCES.includes(newSrc)) return false;
+  if (oldSrc === 'ai' && newSrc === 'ai-low-confidence') return false;
+  if (oldSrc === 'ai' && newSrc === 'ai' && typeof existing.confidence === 'number' &&
+      typeof incoming.confidence === 'number' && incoming.confidence < existing.confidence) return false;
   return true;
 }
 
-let preclassifyDebounceTimer = null;
-let preclassifyResolvers = [];
-let isProcessingPreclassifications = false;
-
-/**
- * processPendingPreclassifications()
- *
- * Batches pending tabs across ALL semantic perspectives simultaneously in a single
- * TypeSafe Jev API call (Multi-Question), eliminating redundant network calls and
- * avoiding storage clobbering race conditions.
- */
-async function processPendingPreclassifications() {
-  if (isProcessingPreclassifications || pendingPreclassifyTabs.size === 0) return;
-  isProcessingPreclassifications = true;
-
-  if (hydrationPromise) {
-    try { await hydrationPromise; } catch {}
-  }
-
-  try {
-    while (pendingPreclassifyTabs.size > 0) {
-      let semanticPerspectives = [];
-      let validTabsInBatch = [];
-      let currentCache = {};
-      const reservationOwner = `background-${Date.now()}-${Math.random()}`;
-      let reservedKeys = [];
-
-      try {
-        const settings = await chrome.storage.local.get([
-          'openRouterApiKey',
-          'classifierApiKey',
-          'aiAuthBlocked',
-          'perspectives',
-          'activePerspectiveId'
-        ]);
-
-        const apiKey = (settings.openRouterApiKey || settings.classifierApiKey || '').trim().replace(/[^\x21-\x7E]/g, '');
-        if (!apiKey || settings.aiAuthBlocked) {
-          pendingPreclassifyTabs.clear();
-          break;
-        }
-
-        const allPerspectives = settings.perspectives;
-        if (!allPerspectives || !Array.isArray(allPerspectives) || allPerspectives.length === 0) {
-          pendingPreclassifyTabs.clear();
-          break;
-        }
-
-        semanticPerspectives = allPerspectives.filter(p => p && p.id && !isDangerousKey(p.id) && p.id !== 'domain' && Array.isArray(p.labels) && p.labels.length > 0);
-        if (semanticPerspectives.length === 0) {
-          pendingPreclassifyTabs.clear();
-          break;
-        }
-
-        const partitionKeys = semanticPerspectives.map(p => `tabClassificationCache_${p.id}`);
-        const partRes = partitionKeys.length ? await chrome.storage.local.get(partitionKeys) : {};
-        let fallbackMonolithic = null;
-        currentCache = {};
-        for (const p of semanticPerspectives) {
-          const partKey = `tabClassificationCache_${p.id}`;
-          let rawPart = null;
-          if (partRes[partKey] && typeof partRes[partKey] === 'object' && !Array.isArray(partRes[partKey])) {
-            rawPart = partRes[partKey];
-          } else {
-            if (!fallbackMonolithic) {
-              const monoRes = await chrome.storage.local.get(['tabClassificationCache']);
-              fallbackMonolithic = (monoRes && typeof monoRes.tabClassificationCache === 'object' && !Array.isArray(monoRes.tabClassificationCache)) ? monoRes.tabClassificationCache : {};
-            }
-            if (fallbackMonolithic && typeof fallbackMonolithic[p.id] === 'object' && !Array.isArray(fallbackMonolithic[p.id])) {
-              rawPart = fallbackMonolithic[p.id];
-            }
-          }
-          const cleanPart = {};
-          if (rawPart) {
-            for (const [k, v] of Object.entries(rawPart)) {
-              if (!isDangerousKey(k) && v && typeof v === 'object' && !Array.isArray(v)) {
-                cleanPart[k] = v;
-              }
-            }
-          }
-          currentCache[p.id] = cleanPart;
-        }
-
-        const batch = Array.from(pendingPreclassifyTabs.values()).slice(0, 24);
-        for (const t of batch) {
-          pendingPreclassifyTabs.delete(t.id || t.url);
-        }
-
-        const questions = {};
-        const criteriaByPerspective = new Map();
-
-        for (const p of semanticPerspectives) {
-          criteriaByPerspective.set(p.id, buildChoiceCriteria(p));
-        }
-
-        const seenBatchUrls = new Set();
-        batch.forEach((tab, tabIdx) => {
-          if (!tab || tab.incognito || !isAiEligibleUrl(tab?.url)) return;
-          const normUrl = normalizeUrlForCache(tab.url);
-          if (!normUrl || seenBatchUrls.has(normUrl)) return;
-          seenBatchUrls.add(normUrl);
-
-          const cleanTitle = stripTitleNoise(tab.title || '').replace(/[\r\n]+/g, ' ').slice(0, 140);
-          const cleanUrl = normUrl.slice(0, 140);
-          const tabKey = `tab_${tabIdx}`;
-
-          let tabHasAnyQuestion = false;
-          for (const p of semanticPerspectives) {
-            const pCache = currentCache[p.id] || {};
-            const pEntry = pCache[normUrl];
-            const isFailedRecently = pEntry?.lastAiAttempt && (Date.now() - pEntry.lastAiAttempt < (pEntry.cooldownMs || 15000));
-            if (!isFailedRecently && (!pEntry || !['ai', 'ai-low-confidence'].includes(getCacheSource(pEntry)))) {
-              const qKey = `${p.id}__${tabKey}`;
-              questions[qKey] = {
-                type: 'choice',
-                instructions: `Categorize \`tabs.${tabKey}\` into the single most fitting category for "${p.name || p.id}" based on criteria.`,
-                criteria: criteriaByPerspective.get(p.id)
-              };
-              tabHasAnyQuestion = true;
-            }
-          }
-
-          if (tabHasAnyQuestion) {
-            validTabsInBatch.push({ tabKey, cleanTitle, cleanUrl, normUrl, tabIdx });
-          }
-        });
-
-        if (validTabsInBatch.length === 0 || Object.keys(questions).length === 0) {
-          continue;
-        }
-
-        const keysByQuestion = new Map();
-        for (const t of validTabsInBatch) {
-          for (const p of semanticPerspectives) {
-            const qKey = `${p.id}__${t.tabKey}`;
-            if (questions[qKey]) keysByQuestion.set(qKey, `${p.id}:${t.normUrl}`);
-          }
-        }
-        const claimResult = updateAiReservations({ type: 'tabout-ai-claim', owner: reservationOwner, keys: [...new Set(keysByQuestion.values())] });
-        reservedKeys = claimResult.claimed;
-        if (claimResult.savePromise) {
-          try { await claimResult.savePromise; } catch {}
-        }
-        const claimed = new Set(reservedKeys);
-        for (const t of validTabsInBatch) {
-          const blockedKeys = semanticPerspectives
-            .map(p => keysByQuestion.get(`${p.id}__${t.tabKey}`))
-            .filter(key => key && !claimed.has(key));
-          if (blockedKeys.length) {
-            const tab = batch[t.tabIdx];
-            deferredPreclassifyTabs.set(tab.id || tab.url, { tab, keys: blockedKeys });
-          }
-        }
-        for (const [qKey, key] of keysByQuestion) {
-          if (!claimed.has(key)) delete questions[qKey];
-        }
-        validTabsInBatch = validTabsInBatch.filter(t => semanticPerspectives.some(p => questions[`${p.id}__${t.tabKey}`]));
-        if (validTabsInBatch.length === 0) continue;
-
-        const state = { tabs: {} };
-        validTabsInBatch.forEach(t => {
-          state.tabs[t.tabKey] = {
-            title: t.cleanTitle,
-            url: stripUrlQueryParams(t.normUrl).slice(0, 300),
-            domain: extractHostname(t.normUrl)
-          };
-        });
-
-        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timeoutId = setTimeout(() => controller?.abort(), 12000);
-
-        let response;
-        try {
-          response = await fetch('https://openrouter.ai/api/alpha/decisions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`,
-              'HTTP-Referer': 'https://github.com/Gohans1/tab-out',
-              'X-Title': 'Tab Out Background Preclassifier'
-            },
-            signal: controller?.signal,
-            body: JSON.stringify({
-              model: '~typesafe/jev-latest',
-              state,
-              questions
-            })
-          });
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-        if (!response.ok) {
-          if (response.status === 401 || response.status === 402 || response.status === 403) {
-            const latest = await chrome.storage.local.get(['openRouterApiKey', 'classifierApiKey']);
-            const latestKey = (latest.openRouterApiKey || latest.classifierApiKey || '').trim().replace(/[^\x21-\x7E]/g, '');
-            if (latestKey === apiKey || (!latestKey && apiKey)) {
-              await chrome.storage.local.set({ aiAuthBlocked: true, lastBlockedApiKey: apiKey });
-            }
-          }
-          if (response.status === 401 || response.status === 403 || response.status === 402 || response.status === 429 || response.status === 529) {
-            pendingPreclassifyTabs.clear();
-          }
-          let cooldownMs = 15000;
-          const retryAfter = Number(response.headers?.get?.('retry-after'));
-          if (!isNaN(retryAfter) && retryAfter > 0) {
-            cooldownMs = Math.min(Math.max(retryAfter * 1000, 5000), 300000);
-          } else if (response.status === 401 || response.status === 403 || response.status === 429 || response.status === 529) {
-            cooldownMs = 60000;
-          } else if (response.status === 400 || response.status === 402 || response.status === 422) {
-            cooldownMs = 300000;
-          }
-          const failedUpdates = {};
-          validTabsInBatch.forEach(t => {
-            semanticPerspectives.forEach(p => {
-              if (isDangerousKey(p.id) || isDangerousKey(t.normUrl)) return;
-              const qKey = `${p.id}__${t.tabKey}`;
-              if (!questions[qKey]) return;
-              const existing = currentCache[p.id]?.[t.normUrl];
-              if (!existing || !['ai', 'ai-low-confidence'].includes(getCacheSource(existing))) {
-                if (!Object.prototype.hasOwnProperty.call(failedUpdates, p.id)) failedUpdates[p.id] = {};
-                failedUpdates[p.id][t.normUrl] = {
-                  ...(typeof existing === 'object' ? existing : {}),
-                  label: existing?.label || 'Khác',
-                  source: existing?.source || 'local',
-                  cooldownMs,
-                  lastAiAttempt: Date.now(),
-                  timestamp: Date.now()
-                };
-              }
-            });
-          });
-          if (Object.keys(failedUpdates).length > 0) {
-            await saveBgClassificationCache(failedUpdates);
-          }
-          break;
-        }
-
-        const data = await response.json();
-        const answers = (data && typeof data === 'object') ? (data.answers || {}) : {};
-
-        const updates = {};
-        for (const [qKey, ans] of Object.entries(answers)) {
-          const choice = ans?.choice;
-          if (!choice) continue;
-
-          let pid = '';
-          let tabKey = '';
-          const splitIdx = qKey.lastIndexOf('__');
-          if (splitIdx !== -1) {
-            pid = qKey.slice(0, splitIdx);
-            tabKey = qKey.slice(splitIdx + 2);
-          } else {
-            // Fallback for single-perspective or legacy mock compatibility
-            pid = semanticPerspectives[0]?.id || 'topic';
-            tabKey = qKey;
-          }
-
-          const tabInfo = validTabsInBatch.find(t => t.tabKey === tabKey);
-          if (!tabInfo) continue;
-
-          const criteria = criteriaByPerspective.get(pid);
-          if (!criteria) continue;
-
-          const validNames = Object.keys(criteria);
-          const matched = validNames.find(n => n.trim().toLowerCase() === String(choice).trim().toLowerCase());
-          if (!matched) continue;
-
-          const confidence = typeof ans?.confidence === 'number' ? ans.confidence : 1.0;
-          const isHighConfidence = confidence >= 0.45;
-
-          let secondaryLabel = null;
-          if (ans?.probabilities && typeof ans.probabilities === 'object') {
-            const sorted = Object.entries(ans.probabilities)
-              .filter(([k]) => k.trim().toLowerCase() !== String(choice).trim().toLowerCase())
-              .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0));
-            if (sorted[0] && Number(sorted[0][1]) >= 0.20) {
-              const validOther = validNames.find(l => l.trim().toLowerCase() === String(sorted[0][0]).trim().toLowerCase());
-              if (validOther) secondaryLabel = validOther;
-            }
-          }
-
-          if (isDangerousKey(pid) || isDangerousKey(tabInfo.normUrl)) continue;
-          if (!Object.prototype.hasOwnProperty.call(updates, pid)) updates[pid] = {};
-          updates[pid][tabInfo.normUrl] = {
-            label: matched,
-            secondaryLabel: secondaryLabel || undefined,
-            source: isHighConfidence ? 'ai' : 'ai-low-confidence',
-            confidence,
-            cooldownMs: isHighConfidence ? undefined : 60000,
-            lastAiAttempt: isHighConfidence ? undefined : Date.now(),
-            timestamp: Date.now()
-          };
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await saveBgClassificationCache(updates);
-        }
-      } catch (err) {
-        // Graceful cooldown on network or runtime error to prevent rapid retry loops
-        try {
-          if (typeof validTabsInBatch !== 'undefined' && validTabsInBatch.length > 0 && typeof semanticPerspectives !== 'undefined') {
-            const cooldownMs = 30000;
-            const failedUpdates = {};
-            validTabsInBatch.forEach(t => {
-              semanticPerspectives.forEach(p => {
-                if (isDangerousKey(p.id) || isDangerousKey(t.normUrl)) return;
-                const existing = currentCache?.[p.id]?.[t.normUrl];
-                if (!existing || !['ai', 'ai-low-confidence'].includes(getCacheSource(existing))) {
-                  if (!Object.prototype.hasOwnProperty.call(failedUpdates, p.id)) failedUpdates[p.id] = {};
-                  failedUpdates[p.id][t.normUrl] = {
-                    ...(typeof existing === 'object' ? existing : {}),
-                    label: existing?.label || 'Khác',
-                    source: existing?.source || 'local',
-                    cooldownMs,
-                    lastAiAttempt: Date.now(),
-                    timestamp: Date.now()
-                  };
-                }
-              });
-            });
-            if (Object.keys(failedUpdates).length > 0) {
-              await saveBgClassificationCache(failedUpdates);
-            }
-          }
-        } catch {}
-        break;
-      } finally {
-        if (reservedKeys.length > 0) {
-          const releaseResult = updateAiReservations({ type: 'tabout-ai-release', owner: reservationOwner, keys: reservedKeys });
-          if (releaseResult?.savePromise) {
-            try { await releaseResult.savePromise; } catch {}
-          }
-          reservedKeys = [];
-        }
-      }
-    }
-  } finally {
-    isProcessingPreclassifications = false;
-    const resolvers = preclassifyResolvers;
-    preclassifyResolvers = [];
-    for (const res of resolvers) {
-      try { res(); } catch {}
-    }
-  }
+function isSameEntry(a, b) {
+  return Boolean(a) && typeof a === 'object' &&
+    ['label', 'source', 'confidence', 'secondaryLabel', 'lastAiAttempt', 'aiAttempts'].every(f => a[f] === b[f]);
 }
 
 /**
- * preclassifyTabInBackground(tab)
+ * saveClassificationCacheAtomic(pid, newEntries, { labelsSig, keepKeys })
  *
- * Runs non-blocking AI pre-classification for newly loaded tabs in the service worker.
- * Debounced and batched across multiple perspectives for 0ms instant display.
+ * Merges answers into one perspective's partition and returns what is stored for those keys.
+ * Nothing is written when the perspective was deleted, or its tags edited, while Jev was answering.
  */
-async function preclassifyTabInBackground(tab) {
-  if (!tab || tab.incognito || !isAiEligibleUrl(tab.url)) return;
+async function saveClassificationCacheAtomic(pid, newEntries, { labelsSig = null, keepKeys = [] } = {}) {
+  const stored = {};
+  if (isDangerousKey(pid) || !newEntries || typeof newEntries !== 'object') return stored;
+  const key = partitionKey(pid);
+  try {
+    const res = await chrome.storage.local.get([key, 'perspectives']);
+    const sig = labelsSignature(res.perspectives, pid);
+    if (Array.isArray(res.perspectives) && sig === null) return stored;
+    if (labelsSig !== null && sig !== labelsSig) return stored;
 
-  const key = tab.id || tab.url;
-  deferredPreclassifyTabs.delete(key);
-  pendingPreclassifyTabs.set(key, tab);
-  if (pendingPreclassifyTabs.size > 100) {
-    const firstKey = pendingPreclassifyTabs.keys().next().value;
-    if (firstKey) pendingPreclassifyTabs.delete(firstKey);
+    const partition = readPartition(res[key]);
+    let changed = false;
+    for (const [urlKey, entry] of Object.entries(newEntries)) {
+      if (isDangerousKey(urlKey)) continue;
+      const incoming = typeof entry === 'string'
+        ? { label: entry, source: 'ai', timestamp: Date.now() }
+        : (entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : null);
+      if (!incoming) continue;
+      const existing = partition[urlKey];
+      if (isUpgrade(existing, incoming) && !isSameEntry(existing, incoming)) {
+        partition[urlKey] = { ...(existing && typeof existing === 'object' ? existing : {}), ...incoming };
+        changed = true;
+      }
+      stored[urlKey] = partition[urlKey];
+    }
+
+    const pruned = pruneClassificationCache(partition, CLASSIFICATION_CACHE_MAX, keepKeys);
+    if (pruned !== partition) changed = true;
+    for (const k of Object.keys(stored)) {
+      if (!(k in pruned)) delete stored[k];
+    }
+    if (changed) await chrome.storage.local.set({ [key]: pruned });
+  } catch (err) {
+    console.warn('[tab-out] Failed to save classification cache:', err);
+  }
+  return stored;
+}
+
+async function readBlockedUntil() {
+  try {
+    const res = await chrome.storage.session?.get(['jevBlockedUntil']);
+    jevBlockedUntil = Math.max(jevBlockedUntil, Number(res?.jevBlockedUntil) || 0);
+  } catch {}
+  return jevBlockedUntil;
+}
+
+// One breaker for every tab and dashboard; kept in session storage to outlive a worker restart.
+function blockJev(ms) {
+  jevBlockedUntil = Math.max(jevBlockedUntil, Date.now() + ms);
+  try { chrome.storage.session?.set({ jevBlockedUntil })?.catch?.(() => {}); } catch {}
+}
+
+async function blockAuth(requestKey) {
+  const latest = await chrome.storage.local.get(['openRouterApiKey', 'classifierApiKey']);
+  const storedKey = sanitizeApiKey(latest?.openRouterApiKey || latest?.classifierApiKey || '');
+  // A 401 for a key the user has since replaced says nothing about the new key.
+  if (storedKey === requestKey || !storedKey) {
+    await chrome.storage.local.set({ aiAuthBlocked: true, lastBlockedApiKey: requestKey });
+  }
+}
+
+function splitIntoBatches(items, criteria) {
+  const perQuestion = JSON.stringify(criteria).length + 160;
+  const batches = [];
+  let current = [];
+  let size = 0;
+  for (const item of items) {
+    const cost = perQuestion + item.title.length + item.url.length + item.domain.length + 60;
+    if (current.length && (current.length >= JEV_MAX_BATCH || size + cost > JEV_BATCH_CHAR_BUDGET)) {
+      batches.push(current);
+      current = [];
+      size = 0;
+    }
+    current.push(item);
+    size += cost;
+  }
+  if (current.length) batches.push(current);
+  return batches;
+}
+
+function buildJevRequest(batch, criteria) {
+  const state = { tabs: {} };
+  const questions = {};
+  batch.forEach((item, idx) => {
+    const qKey = `tab_${idx}`;
+    state.tabs[qKey] = { title: item.title, url: item.url, domain: item.domain };
+    questions[qKey] = {
+      type: 'choice',
+      instructions: `Categorize \`tabs.${qKey}\` into the single most fitting category based on title, domain, and criteria.`,
+      criteria
+    };
+  });
+  return { model: JEV_MODEL, state, questions };
+}
+
+function failedEntries(batch, cache, baseMs, labelOverride) {
+  const now = Date.now();
+  const entries = {};
+  for (const item of batch) {
+    entries[item.key] = {
+      label: labelOverride || item.fallbackLabel,
+      source: 'local',
+      ...nextAiBackoff(cache[item.key], baseMs),
+      lastAiAttempt: now,
+      timestamp: now
+    };
+  }
+  return entries;
+}
+
+function answerEntries(batch, answers, criteria, cache) {
+  const now = Date.now();
+  const labels = Object.keys(criteria);
+  const match = choice => labels.find(l => l.trim().toLowerCase() === String(choice).trim().toLowerCase());
+  const entries = {};
+  batch.forEach((item, idx) => {
+    const ans = answers[`tab_${idx}`];
+    const label = ans?.choice ? match(ans.choice) : null;
+    if (!label) {
+      Object.assign(entries, failedEntries([item], cache, AI_BASE_COOLDOWN_MS, null));
+      return;
+    }
+    const confidence = typeof ans.confidence === 'number' ? ans.confidence : 1.0;
+    const entry = { label, source: confidence >= 0.45 ? 'ai' : 'ai-low-confidence', confidence, timestamp: now };
+    if (ans.probabilities && typeof ans.probabilities === 'object') {
+      const [runnerUp] = Object.entries(ans.probabilities)
+        .filter(([k]) => match(k) && match(k) !== label)
+        .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0));
+      if (runnerUp && Number(runnerUp[1]) >= 0.20) entry.secondaryLabel = match(runnerUp[0]);
+    }
+    entries[item.key] = entry;
+  });
+  return entries;
+}
+
+// Sends one batch. `stop` means no further batch should go out: the key or the endpoint is failing.
+async function askJev(batch, job, cache) {
+  let response;
+  let data;
+  try {
+    response = await fetch(JEV_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${job.apiKey}`,
+        'HTTP-Referer': 'https://github.com/Gohans1/tab-out',
+        'X-Title': 'Tab Out'
+      },
+      signal: typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(JEV_TIMEOUT_MS) : undefined,
+      body: JSON.stringify(buildJevRequest(batch, job.criteria))
+    });
+    if (response.ok) data = await response.json();
+  } catch (err) {
+    // Network failure, timeout, or an unreadable body: the endpoint itself is unwell.
+    console.warn('[tab-out] Jev request failed:', err);
+    blockJev(AI_BASE_COOLDOWN_MS);
+    return { entries: failedEntries(batch, cache, AI_BASE_COOLDOWN_MS, null), stop: true };
   }
 
-  if (preclassifyDebounceTimer) {
-    clearTimeout(preclassifyDebounceTimer);
+  if (response.ok) {
+    const answers = data && typeof data === 'object' && data.answers && typeof data.answers === 'object' ? data.answers : {};
+    return { entries: answerEntries(batch, answers, job.criteria, cache), stop: false };
   }
 
-  return new Promise((resolve) => {
-    preclassifyResolvers.push(resolve);
-    preclassifyDebounceTimer = setTimeout(async () => {
-      try {
-        await processPendingPreclassifications();
-      } catch {}
-      if (!isProcessingPreclassifications && pendingPreclassifyTabs.size === 0) {
-        const resolvers = preclassifyResolvers;
-        preclassifyResolvers = [];
-        for (const res of resolvers) {
-          try { res(); } catch {}
+  const status = response.status;
+  const retryAfter = Number(response.headers?.get?.('retry-after'));
+  let cooldownMs = AI_BASE_COOLDOWN_MS;
+  if (retryAfter > 0) {
+    cooldownMs = Math.min(Math.max(retryAfter * 1000, 5000), 300000);
+  } else if ([401, 403, 429, 529].includes(status)) {
+    cooldownMs = 60000;
+  } else if ([400, 402, 422].includes(status)) {
+    cooldownMs = 300000;
+  }
+  const authFailed = [401, 402, 403].includes(status);
+  const endpointDown = status === 429 || status >= 500;
+  console.warn(`[tab-out] Jev request failed: HTTP ${status}`);
+  if (authFailed) await blockAuth(job.apiKey);
+  if (endpointDown) blockJev(cooldownMs);
+  return {
+    entries: failedEntries(batch, cache, cooldownMs, authFailed ? job.otherLabel : null),
+    stop: authFailed || endpointDown
+  };
+}
+
+// A job can wait seconds in the queue: a tab closed or navigated away meanwhile is not worth paying for.
+async function openTabUrls() {
+  try {
+    const tabs = await chrome.tabs?.query?.({});
+    return Array.isArray(tabs) ? new Map(tabs.map(t => [t.id, t.url || t.pendingUrl || ''])) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runJevJob(job) {
+  const { pid } = job;
+  const results = {};
+  let labelsSig = null;
+  const batches = splitIntoBatches(job.items, job.criteria);
+  for (let b = 0; b < batches.length; b++) {
+    if (Date.now() < await readBlockedUntil()) break;
+    const store = await chrome.storage.local.get([partitionKey(pid), 'perspectives', 'activePerspectiveId', 'aiAuthBlocked']);
+    if (store.aiAuthBlocked === true) break;
+    const sig = labelsSignature(store.perspectives, pid);
+    if (Array.isArray(store.perspectives) && sig === null) break;
+    if (b === 0) labelsSig = sig;
+    else if (sig !== labelsSig) break;
+    // Strict on-demand: the batch in flight may finish, but no new one starts for a perspective the user left.
+    if (store.activePerspectiveId && store.activePerspectiveId !== pid) break;
+
+    const cache = readPartition(store[partitionKey(pid)]);
+    const open = await openTabUrls();
+    const now = Date.now();
+    const batch = [];
+    for (const item of batches[b]) {
+      if (open && item.tabId !== undefined && open.get(item.tabId) !== item.tabUrl) continue;
+      if (needsJev(cache[item.key], now)) batch.push(item);
+      else if (isAiEntry(cache[item.key])) results[item.key] = cache[item.key];
+    }
+    if (!batch.length) continue;
+
+    const { entries, stop } = await askJev(batch, job, cache);
+    Object.assign(results, await saveClassificationCacheAtomic(pid, entries, { labelsSig, keepKeys: job.keepKeys }));
+    if (stop) break;
+  }
+  return results;
+}
+
+function parseJevJob(m) {
+  const pid = typeof m.pid === 'string' ? m.pid : '';
+  const apiKey = sanitizeApiKey(m.apiKey);
+  if (!pid || pid === 'domain' || isDangerousKey(pid) || !apiKey) return null;
+  if (!m.criteria || typeof m.criteria !== 'object' || Array.isArray(m.criteria)) return null;
+  if (!Array.isArray(m.items) || m.items.length > 1000) return null;
+
+  const criteria = {};
+  for (const [name, desc] of Object.entries(m.criteria)) {
+    if (isDangerousKey(name) || name.length > 50) continue;
+    criteria[name] = typeof desc === 'string' ? desc.slice(0, 300) : (desc && typeof desc === 'object' ? desc : name);
+  }
+  if (Object.keys(criteria).length < 2) return null;
+
+  const seen = new Set();
+  const items = [];
+  for (const it of m.items) {
+    // An oversized key is skipped, not clipped: a clipped key would never match the dashboard's.
+    const key = typeof it?.key === 'string' && it.key.length <= MAX_CACHE_KEY_LENGTH ? it.key : '';
+    if (!key || isDangerousKey(key) || seen.has(key)) continue;
+    seen.add(key);
+    items.push({
+      key,
+      tabId: Number.isInteger(it.tabId) ? it.tabId : undefined,
+      tabUrl: typeof it.tabUrl === 'string' ? it.tabUrl : '',
+      title: clip(it.title, 140),
+      url: clip(it.url, 300),
+      domain: clip(it.domain, 253),
+      fallbackLabel: clip(it.fallbackLabel, 50)
+    });
+  }
+  if (!items.length) return null;
+
+  const keepKeys = Array.isArray(m.keepKeys)
+    ? m.keepKeys.filter(k => typeof k === 'string' && !isDangerousKey(k)).slice(0, 5000)
+    : [];
+  return { pid, apiKey, criteria, otherLabel: clip(m.otherLabel, 50) || 'Other', items, keepKeys };
+}
+
+// A new API key deserves a real retry: drop the breaker and every stored failure cooldown.
+async function resetJevCooldowns() {
+  jevBlockedUntil = 0;
+  try { await chrome.storage.session?.set({ jevBlockedUntil: 0 }); } catch {}
+  try {
+    const { perspectives } = await chrome.storage.local.get(['perspectives']);
+    const keys = (Array.isArray(perspectives) ? perspectives : [])
+      .map(p => p?.id)
+      .filter(id => typeof id === 'string' && !isDangerousKey(id))
+      .map(partitionKey);
+    if (!keys.length) return;
+    const res = await chrome.storage.local.get(keys);
+    const updates = {};
+    for (const key of keys) {
+      const partition = readPartition(res[key]);
+      let changed = false;
+      for (const entry of Object.values(partition)) {
+        if (entry && typeof entry === 'object' && !isAiEntry(entry) && (entry.lastAiAttempt || entry.aiAttempts)) {
+          delete entry.lastAiAttempt;
+          delete entry.cooldownMs;
+          delete entry.aiAttempts;
+          changed = true;
         }
       }
-    }, 250);
+      if (changed) updates[key] = partition;
+    }
+    if (Object.keys(updates).length) await chrome.storage.local.set(updates);
+  } catch (err) {
+    console.warn('[tab-out] Failed to reset Jev cooldowns:', err);
+  }
+}
+
+function isTrustedSender(sender) {
+  if (typeof chrome === 'undefined' || !chrome.runtime?.id || sender?.id !== chrome.runtime.id) return false;
+  // Only the extension's own pages, never content scripts or web origins.
+  const extensionOrigin = chrome.runtime.getURL ? chrome.runtime.getURL('') : '';
+  return Boolean(extensionOrigin && sender.url && sender.url.startsWith(extensionOrigin));
+}
+
+/**
+ * handleJevMessage(message, sender, sendResponse)
+ *
+ * { type: 'tabout-jev-classify', pid, apiKey, criteria, otherLabel, items, keepKeys }
+ *   Responds with the entries stored for the job's tabs and how long Jev stays blocked.
+ * { type: 'tabout-jev-reset' } — sent when the user saves a new API key.
+ * Jobs run one at a time; a tab already queued or in flight is not asked for twice.
+ */
+function handleJevMessage(message, sender, sendResponse) {
+  const type = message?.type;
+  if ((type !== 'tabout-jev-classify' && type !== 'tabout-jev-reset') || !isTrustedSender(sender)) return false;
+  if (type === 'tabout-jev-reset') {
+    const reset = jevQueue.then(resetJevCooldowns);
+    jevQueue = reset.catch(() => {});
+    reset.catch(() => {}).then(() => {
+      try { sendResponse({ blockedUntil: jevBlockedUntil }); } catch {}
+    });
+    return true;
+  }
+  const job = parseJevJob(message);
+  if (!job) {
+    sendResponse({ entries: {}, blockedUntil: jevBlockedUntil });
+    return false;
+  }
+
+  const flightKey = item => `${job.pid}:${item.key}`;
+  const items = job.items.filter(item => !jevInFlight.has(flightKey(item)));
+  for (const item of items) jevInFlight.add(flightKey(item));
+
+  const run = jevQueue.then(() => (items.length ? runJevJob({ ...job, items }) : {}));
+  jevQueue = run.catch(() => {});
+  run.catch(err => {
+    console.warn('[tab-out] Jev job failed:', err);
+    return {};
+  }).then(entries => {
+    for (const item of items) jevInFlight.delete(flightKey(item));
+    try { sendResponse({ entries, blockedUntil: jevBlockedUntil }); } catch {}
   });
+  return true;
+}
+
+// Older versions kept every perspective under one key; split it into partitions once, then drop it.
+async function migrateLegacyClassificationCache() {
+  if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
+  try {
+    const res = await chrome.storage.local.get(['tabClassificationCache', 'perspectives']);
+    const mono = res.tabClassificationCache;
+    if (mono === undefined) return;
+    if (mono && typeof mono === 'object' && !Array.isArray(mono)) {
+      const liveIds = Array.isArray(res.perspectives) ? new Set(res.perspectives.map(p => p?.id)) : null;
+      const pids = Object.keys(mono).filter(pid => !isDangerousKey(pid) && (!liveIds || liveIds.has(pid)));
+      const existing = await chrome.storage.local.get(pids.map(partitionKey));
+      const moved = {};
+      for (const pid of pids) {
+        if (!existing[partitionKey(pid)]) moved[partitionKey(pid)] = readPartition(mono[pid]);
+      }
+      if (Object.keys(moved).length) await chrome.storage.local.set(moved);
+    }
+    await chrome.storage.local.remove('tabClassificationCache');
+  } catch (err) {
+    console.warn('[tab-out] Legacy cache migration failed:', err);
+  }
 }
 
 // ─── Event listeners ──────────────────────────────────────────────────────────
 
 if (typeof chrome !== 'undefined') {
-  chrome.runtime?.onMessage?.addListener(handleAiReservationMessage);
-  chrome.storage?.onChanged?.addListener((changes, areaName) => {
-    const keyChanged = (changes.openRouterApiKey && changes.openRouterApiKey.oldValue !== changes.openRouterApiKey.newValue) ||
-                       (changes.classifierApiKey && changes.classifierApiKey.oldValue !== changes.classifierApiKey.newValue);
-    if (areaName === 'local' && keyChanged) {
-      chrome.storage.local.get(['aiAuthBlocked']).then(res => {
-        if (res?.aiAuthBlocked === true) {
-          chrome.storage.local.set({ aiAuthBlocked: false, lastBlockedApiKey: null }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
-  });
+  chrome.runtime?.onMessage?.addListener(handleJevMessage);
   // Update badge when the extension is first installed
   chrome.runtime?.onInstalled?.addListener(() => {
     updateBadge();
     setupContextMenus();
+    migrateLegacyClassificationCache();
   });
 
   // Handle context menu clicks (e.g. "New Tab")
@@ -1068,20 +601,16 @@ if (typeof chrome !== 'undefined') {
     }, delay);
   };
 
-  // Update badge whenever a tab is opened
+  // Update badge whenever a tab is opened or closed
   chrome.tabs?.onCreated?.addListener(() => {
     debouncedUpdateBadge();
   });
-
-  // Update badge whenever a tab is closed and purge from preclassification queues
-  chrome.tabs?.onRemoved?.addListener((tabId) => {
-    pendingPreclassifyTabs.delete(tabId);
-    deferredPreclassifyTabs.delete(tabId);
+  chrome.tabs?.onRemoved?.addListener(() => {
     debouncedUpdateBadge();
   });
 
   // Update badge when a tab's URL changes
-  chrome.tabs?.onUpdated?.addListener((tabId, changeInfo, tab) => {
+  chrome.tabs?.onUpdated?.addListener((tabId, changeInfo) => {
     if (changeInfo.url) {
       debouncedUpdateBadge();
     }
@@ -1128,23 +657,13 @@ function handleContextMenuClick(info, tab) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     updateBadge,
-    preclassifyTabInBackground,
-    buildChoiceCriteria,
-    saveBgClassificationCache,
-    handleAiReservationMessage,
-    isAiEligibleUrl,
+    handleJevMessage,
+    saveClassificationCacheAtomic,
+    migrateLegacyClassificationCache,
     isDangerousKey,
     setupContextMenus,
     handleContextMenuClick,
-    stripUrlQueryParams,
-    stripUserInfoFallback,
-    stripTitleNoise,
-    isFallbackLabel,
     isRealTabUrl,
-    _resetAiReservationsForTesting,
-    hydrateAiReservationsFromSession,
-    aiReservations,
-    deferredPreclassifyTabs,
-    pendingPreclassifyTabs
+    _resetJevWorkerForTesting
   };
 }

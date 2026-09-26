@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bản Thiết Kế: Làm Nổi Tag Có Tab</title>
+  <link rel="stylesheet" href="./visual-core.css">
+  <style>
+    .mock { background:#000; border:1px solid #1f1f23; border-radius:.75rem; padding:1.25rem; width:100%; box-sizing:border-box; font-family:Inter,-apple-system,"Segoe UI",sans-serif; }
+    .mock-head { display:flex; align-items:baseline; gap:.6rem; padding-bottom:.9rem; margin-bottom:1rem; border-bottom:1px solid #1f1f23; flex-wrap:wrap; }
+    .mh-title { font-size:1.1rem; color:#ededed; }
+    .mh-sub { font-size:.72rem; color:#a1a1a1; }
+    .mh-act { margin-left:auto; font-size:.7rem; color:#ededed; border:1px solid #333; border-radius:.35rem; padding:.2rem .5rem; }
+    .bar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
+    .grp { display:inline-flex; flex-wrap:wrap; gap:.4rem; align-items:center; position:relative; padding:.35rem; border-radius:.5rem; }
+    .hl-red { border:2px dashed var(--accent-red) !important; }
+    .hl-green { border:2px dashed var(--accent-green) !important; }
+    .mock-annotation.edge { top:-.85rem; left:.5rem; right:auto; font-size:.6rem; padding:.15rem .5rem; white-space:nowrap; z-index:5; }
+    .p { display:inline-flex; align-items:center; gap:.4rem; height:1.75rem; padding:0 .6rem; border-radius:.375rem; font:500 .75rem Inter,-apple-system,"Segoe UI",sans-serif; border:1px solid transparent; background:transparent; color:#a1a1a1; white-space:nowrap; cursor:pointer; }
+    .p:hover { background:rgba(255,255,255,.08); color:#ededed; }
+    .p .dot { width:.4rem; height:.4rem; border-radius:50%; flex-shrink:0; }
+    .p .cnt { display:inline-flex; align-items:center; justify-content:center; min-width:1rem; height:1rem; padding:0 .25rem; border-radius:.25rem; background:#1a1a1a; border:1px solid rgba(255,255,255,.13); font:600 .6rem ui-monospace,monospace; color:#ededed; }
+    .p.sel { background:#1a1a1a; border-color:rgba(255,255,255,.54); color:#ededed; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+    .p.sel.has-c { border-color:var(--c); }
+    .p.empty { opacity:.55; color:#ededed; }
+    .p.empty .dot { opacity:.6; }
+    .p.empty:hover { opacity:.95; }
+    .p.act.lit { color:#ededed; }
+    .p.act.lit.has-c { border-color:color-mix(in srgb, var(--c) 35%, transparent); }
+    .p.act.tint.has-c { background:color-mix(in srgb, var(--c) 22%, #000); border-color:color-mix(in srgb, var(--c) 60%, transparent); color:#fff; }
+    .p.more { border:1px solid rgba(255,255,255,.13); color:#a1a1a1; font-size:.68rem; }
+    .sep { display:inline-block; width:1px; height:1.1rem; background:rgba(255,255,255,.22); margin:0 .3rem; }
+    .grp .sep { margin:0 .5rem; }
+    .blink { margin-top:1.75rem; font-size:.85rem; color:#ededed; }
+    .mock.collapsed .p.empty, .mock.collapsed .sep { display:none; }
+    .mock.collapsed .grp:not(:has(.act)) { display:none; }
+    .noint { pointer-events:none; }
+    .hdr-note { font-size:.8rem; color:var(--text-main); }
+    .hdr-note.red { color:var(--accent-red); } .hdr-note.green { color:var(--accent-green); }
+    .hint { margin-top:1rem; font-size:.78rem; color:var(--text-sub); }
+    .v-title { font-size:1.15rem; margin:1.5rem 0 1rem; display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; }
+    .verdict { font-size:.75rem; padding:.2rem .6rem; border:1px solid var(--border); border-radius:9999px; }
+    .code-file { font-size:.78rem; font-weight:700; color:#e4e4e7; }
+    .c-mute { color:#9ca3af; font-style:italic; }
+    hr.divider { border:0; border-top:1px solid var(--border); margin:2.5rem 0; }
+    .sub-tabs { flex-wrap:wrap; margin:1.5rem 0 .5rem; }
+  </style>
+</head>
+<body>
+  <header class="nav-header">
+    <div class="brand-title"><span>⚡</span> BẢN THIẾT KẾ: LÀM NỔI TAG CÓ TAB</div>
+    <nav class="tab-group" role="tablist">
+      <button class="tab-btn active" role="tab" aria-selected="true" onclick="switchTab('summarize', this)">📌 Tóm Lược</button>
+      <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('explain', this)">🔍 Giải Thích Chi Tiết</button>
+    </nav>
+  </header>
+  <div class="container">
+    <main id="tab-summarize" class="tab-pane active" role="tabpanel">
+      <section class="callout">
+        <h2>🗣️ TÓM LƯỢC &amp; Ý CHÍNH 🗣️</h2>
+        <p>Pill có tab đang bị CSS <code>!important</code> ép xám gần bằng tag rỗng; combo A + B + C (chữ trắng + viền màu, vạch ngăn 2 nhóm, bỏ số 0) giúp nhìn 1 giây là biết tag nào có tab.</p>
+      </section>
+      <nav class="tab-group sub-tabs" role="tablist">
+        <button class="tab-btn active" role="tab" aria-selected="true" onclick="switchTab('sub-combo', this)">⭐ Chốt: A + B + C</button>
+        <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('sub-a', this)">A · Chữ sáng + viền màu</button>
+        <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('sub-b', this)">B · Vạch ngăn</button>
+        <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('sub-c', this)">C · Bỏ số 0</button>
+        <button class="tab-btn" role="tab" aria-selected="false" onclick="switchTab('sub-d', this)">D · Tô nền ❌</button>
+      </nav>
+      <div>
+        <div id="tab-sub-combo" class="tab-pane active" data-tab-pane="sub-combo" role="tabpanel">
+  <h3 class="v-title">Combo A + B + C (bố m chốt cái này) <span class="verdict">✅ Nên làm</span></h3>
+  <article class="card-wrapper card-slider">
+    <div class="card-header-bar"><span class="card-badge badge-white">CARD 1: KÉO ĐỂ SO SÁNH</span><span class="hdr-note">Trái: hiện tại · Phải: sau khi sửa</span></div>
+    <div class="slider-viewport">
+      <div class="slider-layer slider-before"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">CHÌM: xám ~ tag rỗng</span><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">1 lồn số 0 gây nhiễu</span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button></span><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-layer slider-after"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">A: chữ trắng + viền màu</span><button type="button" class="p act lit has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act lit has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act lit has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act lit has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">B: vạch ngăn</span><span class="sep" aria-hidden="true"></span></span><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">C: bỏ số 0</span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span></button><button type="button" class="p empty"><span>Other</span></button></span><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-divider"><div class="slider-knob" role="slider" aria-label="So sánh trước và sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+      <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+    </div>
+  </article>
+  <article class="card-wrapper card-before">
+    <div class="card-header-bar"><span class="card-badge badge-red">CARD 2: HIỆN TẠI</span><span class="hdr-note red">Hiện tại: 2 nhóm cùng tông xám, chỉ khác nhau ở con số bé tí.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">CHÌM: xám ~ tag rỗng</span><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">1 lồn số 0 gây nhiễu</span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button></span><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+  <article class="card-wrapper card-after">
+    <div class="card-header-bar"><span class="card-badge badge-green">CARD 3: SAU KHI SỬA</span><span class="hdr-note green">Sau: nhóm có tab sáng rõ, có vạch ngăn, tag rỗng lặng hẳn đi.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">A: chữ trắng + viền màu</span><button type="button" class="p act lit has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act lit has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act lit has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act lit has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">B: vạch ngăn</span><span class="sep" aria-hidden="true"></span></span><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">C: bỏ số 0</span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span></button><button type="button" class="p empty"><span>Other</span></button></span><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+</div>
+<div id="tab-sub-a" class="tab-pane" data-tab-pane="sub-a" role="tabpanel" style="display:none">
+  <h3 class="v-title">A: Pill có tab chữ trắng + viền màu tag <span class="verdict">✅ Nên làm (gốc vấn đề)</span></h3>
+  <article class="card-wrapper card-slider">
+    <div class="card-header-bar"><span class="card-badge badge-white">CARD 1: KÉO ĐỂ SO SÁNH</span><span class="hdr-note">Trái: hiện tại · Phải: sau khi sửa</span></div>
+    <div class="slider-viewport">
+      <div class="slider-layer slider-before"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">CHÌM: xám gần bằng tag rỗng</span><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-layer slider-after"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">Chữ trắng + viền màu 35%</span><button type="button" class="p act lit has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act lit has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act lit has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act lit has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-divider"><div class="slider-knob" role="slider" aria-label="So sánh trước và sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+      <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+    </div>
+  </article>
+  <article class="card-wrapper card-before">
+    <div class="card-header-bar"><span class="card-badge badge-red">CARD 2: HIỆN TẠI</span><span class="hdr-note red">Override !important ép chữ về xám phụ, xóa luôn viền màu.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">CHÌM: xám gần bằng tag rỗng</span><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+  <article class="card-wrapper card-after">
+    <div class="card-header-bar"><span class="card-badge badge-green">CARD 3: SAU KHI SỬA</span><span class="hdr-note green">Gỡ override: chữ trắng, viền nhuốm màu tag (rule gốc đã có sẵn).</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">Chữ trắng + viền màu 35%</span><button type="button" class="p act lit has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act lit has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act lit has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act lit has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+</div>
+<div id="tab-sub-b" class="tab-pane" data-tab-pane="sub-b" role="tabpanel" style="display:none">
+  <h3 class="v-title">B: Vạch ngăn giữa nhóm có tab và nhóm rỗng <span class="verdict">✅ Nên làm</span></h3>
+  <article class="card-wrapper card-slider">
+    <div class="card-header-bar"><span class="card-badge badge-white">CARD 1: KÉO ĐỂ SO SÁNH</span><span class="hdr-note">Trái: hiện tại · Phải: sau khi sửa</span></div>
+    <div class="slider-viewport">
+      <div class="slider-layer slider-before"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">Ranh giới 2 nhóm ở đâu?</span><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-layer slider-after"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">Ranh giới rõ</span><span class="sep" aria-hidden="true"></span></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-divider"><div class="slider-knob" role="slider" aria-label="So sánh trước và sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+      <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+    </div>
+  </article>
+  <article class="card-wrapper card-before">
+    <div class="card-header-bar"><span class="card-badge badge-red">CARD 2: HIỆN TẠI</span><span class="hdr-note red">Sort đã gom nhóm có tab về trái, nhưng mắt đéo thấy ranh giới.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">Ranh giới 2 nhóm ở đâu?</span><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+  <article class="card-wrapper card-after">
+    <div class="card-header-bar"><span class="card-badge badge-green">CARD 3: SAU KHI SỬA</span><span class="hdr-note green">Thêm 1 vạch dọc mảnh: trái = có tab, phải = rỗng.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">Ranh giới rõ</span><span class="sep" aria-hidden="true"></span></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+</div>
+<div id="tab-sub-c" class="tab-pane" data-tab-pane="sub-c" role="tabpanel" style="display:none">
+  <h3 class="v-title">C: Bỏ badge “0” trên tag rỗng <span class="verdict">✅ Nên làm</span></h3>
+  <article class="card-wrapper card-slider">
+    <div class="card-header-bar"><span class="card-badge badge-white">CARD 1: KÉO ĐỂ SO SÁNH</span><span class="hdr-note">Trái: hiện tại · Phải: sau khi sửa</span></div>
+    <div class="slider-viewport">
+      <div class="slider-layer slider-before"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">5 badge “0” vô nghĩa</span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button></span><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-layer slider-after"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">Có số = có tab</span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span></button><button type="button" class="p empty"><span>Other</span></button></span><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-divider"><div class="slider-knob" role="slider" aria-label="So sánh trước và sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+      <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+    </div>
+  </article>
+  <article class="card-wrapper card-before">
+    <div class="card-header-bar"><span class="card-badge badge-red">CARD 2: HIỆN TẠI</span><span class="hdr-note red">Badge số xuất hiện ở mọi pill nên đéo còn là tín hiệu.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">5 badge “0” vô nghĩa</span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button></span><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+  <article class="card-wrapper card-after">
+    <div class="card-header-bar"><span class="card-badge badge-green">CARD 3: SAU KHI SỬA</span><span class="hdr-note green">Chỉ pill có tab mới có số, nhìn là biết.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button><span class="grp diff-highlight hl-green" data-diff="annotation"><span class="mock-annotation green edge">Có số = có tab</span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span></button><button type="button" class="p empty"><span>Other</span></button></span><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+</div>
+<div id="tab-sub-d" class="tab-pane" data-tab-pane="sub-d" role="tabpanel" style="display:none">
+  <h3 class="v-title">D: Tô nền màu cho pill có tab (đéo khuyên) <span class="verdict">❌ Đéo khuyên</span></h3>
+  <article class="card-wrapper card-slider">
+    <div class="card-header-bar"><span class="card-badge badge-white">CARD 1: KÉO ĐỂ SO SÁNH</span><span class="hdr-note">Trái: hiện tại · Phải: sau khi sửa</span></div>
+    <div class="slider-viewport">
+      <div class="slider-layer slider-before"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">CHÌM: xám gần bằng tag rỗng</span><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-layer slider-after"><div class="noint"><div class="mock">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">Lòe loẹt, lẫn với “đang chọn”</span><button type="button" class="p act tint has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act tint has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act tint has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act tint has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div></div></div>
+      <div class="slider-divider"><div class="slider-knob" role="slider" aria-label="So sánh trước và sau" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">⇄</div></div>
+      <input type="range" class="slider-input-range" min="0" max="100" value="50" tabindex="-1" aria-hidden="true">
+    </div>
+  </article>
+  <article class="card-wrapper card-before">
+    <div class="card-header-bar"><span class="card-badge badge-red">CARD 2: HIỆN TẠI</span><span class="hdr-note red">Hiện tại chìm.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">CHÌM: xám gần bằng tag rỗng</span><button type="button" class="p act has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+  <article class="card-wrapper card-after">
+    <div class="card-header-bar"><span class="card-badge badge-green">CARD 3: SAU KHI SỬA</span><span class="hdr-note green">Nổi thật, nhưng 4 cục màu cạnh nhau như cây thông Noel, và cạnh tranh với pill All đang chọn.</span></div>
+    <div class="mock interactive">
+  <div class="mock-head"><span class="mh-title">Topic</span><span class="mh-sub">4 of 9 categories</span><span class="mh-act">✕ Close all 10 tabs</span></div>
+  <div class="bar"><button type="button" class="p sel"><span>All</span><span class="cnt">10</span></button><span class="grp diff-highlight hl-red" data-diff="annotation"><span class="mock-annotation red edge">Lòe loẹt, lẫn với “đang chọn”</span><button type="button" class="p act tint has-c" style="--c:#10b981"><span class="dot" style="background:#10b981"></span><span>Development</span><span class="cnt">1</span></button><button type="button" class="p act tint has-c" style="--c:#a855f7"><span class="dot" style="background:#a855f7"></span><span>AI &amp; Assistants</span><span class="cnt">3</span></button><button type="button" class="p act tint has-c" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Social Media</span><span class="cnt">4</span></button><button type="button" class="p act tint has-c" style="--c:#f43f5e"><span class="dot" style="background:#f43f5e"></span><span>Media &amp; Entertainment</span><span class="cnt">2</span></button></span><button type="button" class="p empty" style="--c:#3b82f6"><span class="dot" style="background:#3b82f6"></span><span>Work &amp; Productivity</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>Education &amp; Study</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#f59e0b"><span class="dot" style="background:#f59e0b"></span><span>News &amp; Reading</span><span class="cnt">0</span></button><button type="button" class="p empty" style="--c:#06b6d4"><span class="dot" style="background:#06b6d4"></span><span>Shopping &amp; Finance</span><span class="cnt">0</span></button><button type="button" class="p empty"><span>Other</span><span class="cnt">0</span></button><button type="button" class="p more" data-more>- Less</button></div>
+  <div class="blink">👀 Test 1 giây: nhìn lướt thanh tag, <b>tag nào đang có tab mở?</b></div>
+</div>
+    <p class="hint">🖱️ Bấm pill để chọn, bấm “- Less” để thu gọn / mở rộng.</p>
+  </article>
+</div>
+      </div>
+    </main>
+    <section id="tab-explain" class="tab-pane" role="tabpanel" style="display:none">
+      <section class="explain-section"><div class="explain-layout">
+  <div class="explain-text-col"><div class="zoom-tier-badge">TẦNG 1/4 • VĨ MÔ</div><h3>📁 1. Đụng vào file nào</h3><p>3 phương án chốt chỉ đụng 2 file code + 1 file test. A là thuần CSS, B và C sửa ở hàm sinh HTML pill.</p><div class="meta-tag-group"><span class="meta-tag green">2 file</span><span class="meta-tag blue">+1 test</span></div></div>
+  <div class="code-container">
+  <div class="code-topbar">
+    <div class="code-topbar-left"><div class="code-dots"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span></div><span class="code-file">📁 tab-out/</span></div>
+    <div class="code-actions"><span class="code-lang-badge"><span class="lang-dot structure"></span> STRUCTURE</span><button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button></div>
+  </div>
+  <div class="code-body"><div class="c-line"><span class="c-sign"></span><span class="c-text">📁 <span class="prop">extension</span>/</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  📄 <span class="prop">style.css</span></span><span class="c-comment"># A: gỡ override !important (dòng 3553)</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  📄 <span class="prop">app.js</span></span><span class="c-comment"># B + C: renderPerspectiveTagsBar sinh HTML pill</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  📄 <span class="prop">vercel-brand.css</span></span><span class="c-comment"># token màu, THIẾU --vbg-text-tertiary</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">📁 <span class="prop">test</span>/</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">  📄 <span class="prop">perspective-tag-order.test.ts</span></span><span class="c-comment"># test RED cho vạch ngăn + ẩn số 0</span></div></div>
+</div>
+</div></section><hr class="divider"><section class="explain-section"><div class="explain-layout">
+  <div class="explain-text-col"><div class="zoom-tier-badge">TẦNG 2/4 • GỐC LỖI</div><h3>🎨 2. Vì sao pill có tab bị chìm (A)</h3><p>Rule gốc đã muốn pill có tab chữ trắng + viền màu. Nhưng khối override <code>.vbg-report</code> dùng <code>!important</code> ép lại chữ xám phụ và viền trong suốt.</p><p>Fix A = sửa đúng 2 dòng trong khối override đó.</p><div class="meta-tag-group"><span class="meta-tag red">!important đè</span><span class="meta-tag green">2 dòng</span></div></div>
+  <div class="code-container">
+  <div class="code-topbar">
+    <div class="code-topbar-left"><div class="code-dots"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span></div><span class="code-file">📄 extension/style.css</span></div>
+    <div class="code-actions"><span class="diff-stat"><span class="stat-add">+2</span> <span class="stat-del">-2</span></span><span class="code-lang-badge"><span class="lang-dot css"></span> CSS</span><button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button></div>
+  </div>
+  <div class="code-body"><div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-mute">/* dòng 1204: rule gốc, CHẾT vì bị đè */</span></span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tag">.perspective-tag-pill.is-active</span> { <span class="attr">color</span>: <span class="fn">var</span>(<span class="prop">--vbg-text-primary</span>); }</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-mute">/* dòng 1268: viền màu tag, CHẾT vì bị đè */</span></span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tag">.is-active.has-color</span> { <span class="attr">border-color</span>: <span class="fn">color-mix</span>(<span class="kwd">in</span> srgb, <span class="fn">var</span>(<span class="prop">--pill-color</span>) <span class="num">35%</span>, transparent); }</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"></span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-mute">/* dòng 3553: override .vbg-report thắng nhờ !important */</span></span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tag">.vbg-report ... .is-active</span> {</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="attr">background</span>: transparent <span class="kwd">!important</span>;</span></div>
+<div class="c-line del"><span class="c-sign">-</span><span class="c-text">  <span class="attr">border</span>: <span class="num">1px</span> solid transparent <span class="kwd">!important</span>;</span></div>
+<div class="c-line del"><span class="c-sign">-</span><span class="c-text">  <span class="attr">color</span>: <span class="fn">var</span>(<span class="prop">--vbg-text-secondary</span>) <span class="kwd">!important</span>;</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="attr">border</span>: <span class="num">1px</span> solid <span class="fn">color-mix</span>(<span class="kwd">in</span> srgb, <span class="fn">var</span>(<span class="prop">--pill-color</span>, transparent) <span class="num">35%</span>, transparent) <span class="kwd">!important</span>;</span><span class="c-comment"># A</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="attr">color</span>: <span class="fn">var</span>(<span class="prop">--vbg-text-primary</span>) <span class="kwd">!important</span>;</span><span class="c-comment"># A</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">}</span></div></div>
+</div>
+</div></section><hr class="divider"><section class="explain-section"><div class="explain-layout">
+  <div class="explain-text-col"><div class="zoom-tier-badge">TẦNG 2/4 • FYI</div><h3>🐛 2b. Bonus bug: token không tồn tại</h3><p><code>--vbg-text-tertiary</code> được dùng 10 lần trong style.css nhưng đéo được định nghĩa ở đâu cả. Tag rỗng vì thế kế thừa chữ trắng rồi mờ 55%, ra màu xám gần y hệt pill có tab.</p><p>Chưa đụng vào trong combo, để m quyết.</p><div class="meta-tag-group"><span class="meta-tag yellow">FYI</span><span class="meta-tag red">10 chỗ dùng</span></div></div>
+  <div class="code-container">
+  <div class="code-topbar">
+    <div class="code-topbar-left"><div class="code-dots"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span></div><span class="code-file">📄 extension/style.css (FYI)</span></div>
+    <div class="code-actions"><span class="code-lang-badge"><span class="lang-dot css"></span> CSS</span><button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button></div>
+  </div>
+  <div class="code-body"><div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="tag">.vbg-report ... .is-empty</span> {</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="attr">color</span>: <span class="fn">var</span>(<span class="prop">--vbg-text-tertiary</span>) <span class="kwd">!important</span>;</span><span class="c-comment"># token đéo tồn tại</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="attr">opacity</span>: <span class="num">0.55</span> <span class="kwd">!important</span>;</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">}</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-mute">/* var() trỏ vào token không định nghĩa → giá trị "unset" → màu kế thừa từ cha (trắng) */</span></span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="c-mute">/* nên tag rỗng = trắng × 0.55 ≈ xám #828282, sát rạt pill có tab (#a1a1a1) */</span></span></div></div>
+</div>
+</div></section><hr class="divider"><section class="explain-section"><div class="explain-layout">
+  <div class="explain-text-col"><div class="zoom-tier-badge">TẦNG 3/4 • RUNTIME</div><h3>🌲 3. Luồng render thanh tag (B, C)</h3><p>Mọi pill sinh ra trong 1 vòng lặp của <code>renderPerspectiveTagsBar</code>. Nhờ sort mới, nhóm có tab luôn nằm trước, nên vạch ngăn chỉ cần chèn đúng 1 lần ở chỗ chuyển nhóm.</p><div class="meta-tag-group"><span class="meta-tag blue">1 vòng lặp</span><span class="meta-tag green">+ ~3 dòng</span></div></div>
+  <div class="code-container">
+  <div class="code-topbar">
+    <div class="code-topbar-left"><div class="code-dots"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span></div><span class="code-file">📄 extension/app.js · call tree</span></div>
+    <div class="code-actions"><span class="code-lang-badge"><span class="lang-dot flow"></span> FLOW</span><button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button></div>
+  </div>
+  <div class="code-body"><div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="fn">renderPerspectiveTagsBar</span>(<span class="prop">groups</span>)</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="prop">allList</span>.<span class="fn">sort</span>(...)</span><span class="c-comment"># đã sửa: có tab lên trước</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="kwd">for</span> <span class="prop">item</span> <span class="kwd">of</span> <span class="prop">itemsToRender</span></span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">    <span class="prop">item.count</span> &gt; <span class="num">0</span> → pill <span class="str">is-active</span> + <span class="str">pill-count</span></span></div>
+<div class="c-line del"><span class="c-sign">-</span><span class="c-text">    <span class="prop">item.count</span> = <span class="num">0</span> → pill <span class="str">is-empty</span> + <span class="str">pill-count "0"</span></span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="prop">item.count</span> = <span class="num">0</span> → pill <span class="str">is-empty</span> (đéo có count)</span><span class="c-comment"># C</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">    <span class="kwd">if</span> item trước có tab <span class="kwd">and</span> item này rỗng → chèn <span class="str">&lt;span class="perspective-tag-sep"&gt;</span></span><span class="c-comment"># B</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  nút <span class="str">"+ N more"</span> / <span class="str">"- Less"</span></span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="fn">renderIfChanged</span>(<span class="prop">barEl</span>, <span class="prop">pillsHtml</span>)</span></div></div>
+</div>
+</div></section><hr class="divider"><section class="explain-section"><div class="explain-layout">
+  <div class="explain-text-col"><div class="zoom-tier-badge">TẦNG 4/4 • LOGIC</div><h3>🧠 4. Pseudocode + test sẽ viết</h3><p>Test viết trước (RED), rồi mới sửa code (GREEN). Vạch ngăn đánh <code>aria-hidden</code> để screen reader đéo đọc nhảm.</p><div class="meta-tag-group"><span class="meta-tag purple">TDD</span><span class="meta-tag blue">a11y</span></div></div>
+  <div class="code-container">
+  <div class="code-topbar">
+    <div class="code-topbar-left"><div class="code-dots"><span class="code-dot red"></span><span class="code-dot yellow"></span><span class="code-dot green"></span></div><span class="code-file">📄 pseudocode</span></div>
+    <div class="code-actions"><span class="code-lang-badge"><span class="lang-dot logic"></span> LOGIC</span><button class="btn-copy-code" type="button" onclick="copyCodeBlock(this)">Sao chép</button></div>
+  </div>
+  <div class="code-body"><div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="kwd">on</span> <span class="fn">renderPill</span>(<span class="prop">item</span>, <span class="prop">prev</span>)</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">  <span class="kwd">if</span> <span class="prop">prev</span>.hasTabs <span class="kwd">and not</span> <span class="prop">item</span>.hasTabs</span><span class="c-comment"># B</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">    emit separator (aria-hidden, không phải tab)</span><span class="c-comment"># B</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="kwd">if</span> <span class="prop">item</span>.hasTabs</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">    emit pill sáng + viền màu + count</span><span class="c-comment"># A làm bằng CSS</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text">  <span class="kwd">else</span></span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">    emit pill mờ, không count</span><span class="c-comment"># C</span></div>
+<div class="c-line"><span class="c-sign"></span><span class="c-text"><span class="kwd">test</span> (RED trước)</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">  expanded: separator nằm đúng giữa "Media &amp; Entertainment" và "Work &amp; Productivity"</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">  tag rỗng: HTML đéo chứa pill-count</span></div>
+<div class="c-line add"><span class="c-sign">+</span><span class="c-text">  collapsed: không có tag rỗng → đéo có separator</span></div></div>
+</div>
+</div></section>
+    </section>
+  </div>
+  <button id="inspector-toggle" onclick="toggleDiff()"><span>🔍 Check Diff</span> <span id="diffStatusTag">[BẬT]</span></button>
+  <script>
+    document.addEventListener('click', function (e) {
+      var mock = e.target.closest('.mock.interactive');
+      if (!mock) return;
+      var btn = e.target.closest('.p');
+      if (!btn) return;
+      if (btn.hasAttribute('data-more')) {
+        var collapsed = mock.classList.toggle('collapsed');
+        btn.textContent = collapsed ? '+ 5 more' : '- Less';
+        return;
+      }
+      mock.querySelectorAll('.p.sel').forEach(function (p) { p.classList.remove('sel'); });
+      btn.classList.add('sel');
+    });
+  </script>
+  <script src="./visual-core.js"></script>
+</body>
+</html>

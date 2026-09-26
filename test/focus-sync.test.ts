@@ -126,6 +126,20 @@ describe("Focus Sync, DOM Cache & Interaction Lock (TDD Behavior Verification)",
       expect(app.areTabsEqual(base, base.slice(0, 1))).toBe(false);
       expect(app.areTabsEqual([], [])).toBe(true);
     });
+
+    test("a tab whose title only changes its unread count is unchanged on screen, so no re-render", () => {
+      const before = [{ id: 1, url: "https://mail.google.com/mail/u/0", title: "(3) Inbox (1,204) - Gmail", active: false, windowId: 10 }];
+      const after = [{ ...before[0], title: "(4) Inbox (1,205) - Gmail" }];
+
+      expect(app.areTabsEqual(before, after)).toBe(true);
+    });
+
+    test("a favicon swap alone is unchanged on screen (icons come from the URL), so no re-render", () => {
+      const before = [{ id: 1, url: "https://chat.example.com/", title: "Chat", active: false, windowId: 10, favIconUrl: "https://chat.example.com/idle.png" }];
+      const after = [{ ...before[0], favIconUrl: "https://chat.example.com/unread.png" }];
+
+      expect(app.areTabsEqual(before, after)).toBe(true);
+    });
   });
 
   describe("renderIfChanged & renderStaticDashboard — DOM Stability & Empty State Transitions", () => {
