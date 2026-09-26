@@ -1433,6 +1433,19 @@ function getFallbackLabelName(lang) {
   return activeLang === 'vi' ? 'Khác' : 'Other';
 }
 
+// What a perspective's answers depend on: its tags' names and descriptions, ignoring order, case and
+// the fallback tag. background.js has the same function and drops answers asked with another one.
+function perspectiveLabelsSignature(perspective) {
+  const labels = Array.isArray(perspective?.labels) ? perspective.labels : [];
+  return labels
+    .map(l => (typeof l === 'string' ? { name: l } : l || {}))
+    .map(l => [typeof l.name === 'string' ? l.name.trim() : '', typeof l.description === 'string' ? l.description.trim() : ''])
+    .filter(([name]) => name && !FALLBACK_TAG_REGEX.test(name))
+    .map(([name, desc]) => `${name.toLowerCase()}::${desc.toLowerCase()}`)
+    .sort()
+    .join('|');
+}
+
 function buildChoiceCriteria(perspective) {
   const criteria = Object.create(null);
   if (!perspective || !Array.isArray(perspective.labels)) return criteria;
@@ -2415,6 +2428,17 @@ function enqueueStorageWrite(fn) {
   return next;
 }
 
+// The new tags are stored before the old answers are wiped: a Jev answer landing in between then
+// meets the new tags and is dropped by the worker, instead of re-creating the partition it asked for.
+function savePerspectiveSettings(wipePid = null) {
+  return enqueueStorageWrite(async () => {
+    await chrome.storage.local.set({ perspectives: currentPerspectives, activePerspectiveId });
+    if (wipePid && !isDangerousKey(wipePid)) {
+      await chrome.storage.local.remove([`tabClassificationCache_${wipePid}`]);
+    }
+  });
+}
+
 /**
  * Multi-topic domains where different tabs belong to completely different categories.
  * Domain fallback must NEVER automatically inherit classifications across these domains.
@@ -2477,6 +2501,27 @@ const inFlightUrls = new Set();
 const AI_SOURCES = ['ai', 'ai-low-confidence'];
 // Jev is rate-limited or down until this time, as last reported by the service worker.
 let jevBlockedUntil = 0;
+let jevRetryTimer = null;
+let jevRetryAt = 0;
+const JEV_MAX_JOB_ITEMS = 1000;
+
+// Nothing else re-asks once the block lifts if the user just keeps looking at the dashboard.
+function scheduleJevRetry() {
+  const wait = jevBlockedUntil - Date.now();
+  if (wait <= 0 || jevRetryAt === jevBlockedUntil || typeof setTimeout !== 'function') return;
+  clearTimeout(jevRetryTimer);
+  jevRetryAt = jevBlockedUntil;
+  jevRetryTimer = setTimeout(() => {
+    jevRetryTimer = null;
+    jevRetryAt = 0;
+    if (typeof document === 'undefined') return;
+    if (document.hidden) {
+      pendingHiddenRefresh = true;
+      return;
+    }
+    renderStaticDashboard({ inMemoryOnly: true }).catch(() => {});
+  }, wait + 250);
+}
 
 // A loading tab still carries the previous page's title; classify it once it reaches 'complete'.
 function isTabReadyForAi(tab) {
@@ -2607,7 +2652,11 @@ async function classifyTabs(tabs, perspective, options = {}) {
     }
   }
 
-  if (Date.now() < jevBlockedUntil || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+  if (Date.now() < jevBlockedUntil) {
+    scheduleJevRetry();
+    return cache;
+  }
+  if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
     return cache;
   }
 
@@ -2615,6 +2664,8 @@ async function classifyTabs(tabs, perspective, options = {}) {
   const items = [];
   const pendingKeys = [];
   for (const t of tabs) {
+    // The worker refuses a larger job outright; the rest go out on a later sync.
+    if (items.length >= JEV_MAX_JOB_ITEMS) break;
     if (!isTabReadyForAi(t)) continue;
     const key = normalizeUrlForCache(t.url) || t.url || '';
     const flightKey = `${pid}:${key}`;
@@ -2649,6 +2700,8 @@ async function classifyTabs(tabs, perspective, options = {}) {
       pid,
       apiKey: openRouterApiKey,
       criteria: buildChoiceCriteria(perspective),
+      // Lets the worker drop this job if the tags are edited before it runs.
+      labelsSig: perspectiveLabelsSignature(perspective),
       otherLabel: perspective.labels.map(getLabelName).find(isFallbackLabel) || getFallbackLabelName(),
       items,
       // Open tabs' answers must survive the worker's cache pruning, or they would be paid for again.
@@ -2656,6 +2709,7 @@ async function classifyTabs(tabs, perspective, options = {}) {
     });
     if (Number(response?.blockedUntil) > 0) jevBlockedUntil = Number(response.blockedUntil);
     mergeClassificationEntries(pid, response?.entries);
+    scheduleJevRetry();
   } catch (err) {
     // The service worker restarted mid-job; the next sync asks again.
     console.warn('[tab-out] Jev classification did not complete:', err);
@@ -2688,15 +2742,12 @@ function triggerBackgroundClassification(tabs, perspective) {
   const pid = perspective.id;
 
   if (isBackgroundClassifying) {
-    if (pendingClassificationRequest && pendingClassificationRequest.perspective?.id === perspective.id) {
-      const existingKeys = new Set(pendingClassificationRequest.tabs.map(t => t.id || t.url));
-      const extraTabs = tabs.filter(t => !existingKeys.has(t.id || t.url));
-      if (extraTabs.length > 0) {
-        pendingClassificationRequest.tabs = pendingClassificationRequest.tabs.concat(extraTabs);
-      }
-    } else {
-      pendingClassificationRequest = { tabs, perspective };
+    // Only the pid is queued: tags edited meanwhile must be read again when the run starts.
+    if (pendingClassificationRequest?.pid !== pid) {
+      pendingClassificationRequest = { pid, tabs: new Map() };
     }
+    // The latest snapshot of a tab wins, so a tab that navigated is asked for its new page.
+    for (const t of tabs) pendingClassificationRequest.tabs.set(t.id ?? t.url, t);
     return;
   }
   isBackgroundClassifying = true;
@@ -2710,7 +2761,11 @@ function triggerBackgroundClassification(tabs, perspective) {
         prevLabels.set(norm, getCacheLabel(cacheBefore[norm]));
       }
 
+      const askedSig = perspectiveLabelsSignature(perspective);
       await classifyTabs(tabs, perspective, { silent: false });
+      // The worker drops answers asked with tags edited meanwhile; those tabs must be asked again.
+      const current = currentPerspectives.find(p => p.id === pid);
+      const tagsEdited = Boolean(current) && perspectiveLabelsSignature(current) !== askedSig;
 
       // Only re-render if user is still on this perspective AND at least one label actually changed!
       if (activePerspectiveId === pid) {
@@ -2724,8 +2779,8 @@ function triggerBackgroundClassification(tabs, perspective) {
             break;
           }
         }
-        if (hasLabelChanges) {
-          await renderStaticDashboard({ skipBackgroundAi: true, inMemoryOnly: true });
+        if (hasLabelChanges || tagsEdited) {
+          await renderStaticDashboard({ skipBackgroundAi: !tagsEdited, inMemoryOnly: true });
         }
       }
     } catch (err) {
@@ -2734,9 +2789,10 @@ function triggerBackgroundClassification(tabs, perspective) {
       isBackgroundClassifying = false;
       const next = pendingClassificationRequest;
       pendingClassificationRequest = null;
-      // Strict on-demand: a queued run for a perspective the user has since left is dropped.
-      if (next && next.perspective?.id === activePerspectiveId) {
-        triggerBackgroundClassification(next.tabs, next.perspective);
+      // Strict on-demand: a queued run for a perspective the user has since left (or deleted) is dropped.
+      const nextPerspective = next && next.pid === activePerspectiveId && currentPerspectives.find(p => p.id === next.pid);
+      if (nextPerspective) {
+        triggerBackgroundClassification([...next.tabs.values()], nextPerspective);
       }
     }
   })();
@@ -5030,10 +5086,7 @@ if (typeof document !== 'undefined') {
       delete tabClassificationCache[editId];
     }
     setLocalSettingLock(400);
-    await enqueueStorageWrite(async () => {
-      await chrome.storage.local.remove([`tabClassificationCache_${editId}`]);
-      await chrome.storage.local.set({ perspectives: currentPerspectives, activePerspectiveId });
-    });
+    await savePerspectiveSettings(editId);
 
     const overlay = document.getElementById('perspectiveModalOverlay');
     if (overlay) overlay.style.display = 'none';
@@ -6142,6 +6195,7 @@ async function handleStorageOnChanged(changes, areaName) {
       // The service worker writes one partition per perspective; a removed partition was wiped.
       // Partitions this dashboard never loaded are skipped: they are read on demand when shown.
       let hasRelevantChanges = false;
+      let activePartitionWiped = false;
       let openTabNormUrls = null;
       for (const [key, change] of Object.entries(changes)) {
         if (!key.startsWith('tabClassificationCache_')) continue;
@@ -6149,6 +6203,7 @@ async function handleStorageOnChanged(changes, areaName) {
         if (isDangerousKey(pid)) continue;
         if (change.newValue === undefined) {
           delete tabClassificationCache[pid];
+          if (pid === activePerspectiveId) activePartitionWiped = true;
           continue;
         }
         if (!Object.prototype.hasOwnProperty.call(tabClassificationCache, pid)) continue;
@@ -6161,7 +6216,8 @@ async function handleStorageOnChanged(changes, areaName) {
 
       // An activePerspectiveId equal to ours is the echo of this tab's own switchPerspective write.
       const hasActualSettingChange =
-        (changes.perspectives && changes.perspectives.oldValue !== changes.perspectives.newValue) ||
+        // Storage hands over fresh copies, so identical perspectives are compared by content.
+        (changes.perspectives && JSON.stringify(changes.perspectives.oldValue) !== JSON.stringify(changes.perspectives.newValue)) ||
         (changes.activePerspectiveId && changes.activePerspectiveId.newValue !== activePerspectiveId) ||
         (changes.openRouterApiKey && changes.openRouterApiKey.oldValue !== changes.openRouterApiKey.newValue) ||
         (changes.classifierApiKey && changes.classifierApiKey.oldValue !== changes.classifierApiKey.newValue) ||
@@ -6191,6 +6247,16 @@ async function handleStorageOnChanged(changes, areaName) {
         const nextTheme = changes[THEME_STORAGE_KEY].newValue;
         if (nextTheme !== currentTheme) {
           await setTheme(nextTheme);
+        }
+      }
+
+      // The tags were edited elsewhere: the labels on screen are gone and the tabs need asking again.
+      if (activePartitionWiped && !didRenderDashboard) {
+        if (isHidden) {
+          pendingHiddenRefresh = true;
+        } else {
+          await renderStaticDashboard({ inMemoryOnly: true });
+          didRenderDashboard = true;
         }
       }
 
@@ -6265,14 +6331,8 @@ if (typeof document !== 'undefined') {
     if (editId) {
       const existing = currentPerspectives.find(p => p.id === editId);
       if (!existing || existing.isSystem) return;
-        // Compare semantic contents (names & descriptions) ignoring colors and fallback tag
-        const getSemanticSignature = (list) => (list || [])
-          .filter(l => !isFallbackLabel(l.name))
-          .map(l => `${(l.name || '').trim().toLowerCase()}::${(l.description || '').trim().toLowerCase()}`)
-          .sort()
-          .join('|');
-
-        semanticsChanged = getSemanticSignature(existing.labels) !== getSemanticSignature(labels);
+        // Colors, order and the fallback tag do not change what Jev answered, so they keep the answers.
+        semanticsChanged = perspectiveLabelsSignature(existing) !== perspectiveLabelsSignature({ labels });
 
         const formEl = document.getElementById('perspectiveForm');
         const appliedTemplateId = formEl?.dataset?.templateId;
@@ -6315,12 +6375,7 @@ if (typeof document !== 'undefined') {
     }
 
     setLocalSettingLock(400);
-    await enqueueStorageWrite(async () => {
-      if (editId && !isDangerousKey(editId) && semanticsChanged) {
-        await chrome.storage.local.remove([`tabClassificationCache_${editId}`]);
-      }
-      await chrome.storage.local.set({ perspectives: currentPerspectives, activePerspectiveId });
-    });
+    await savePerspectiveSettings(editId && semanticsChanged ? editId : null);
 
     const overlay = document.getElementById('perspectiveModalOverlay');
     if (overlay) overlay.style.display = 'none';
@@ -6884,6 +6939,8 @@ if (typeof module !== 'undefined' && module.exports) {
     set jevBlockedUntil(v) { jevBlockedUntil = Number(v) || 0; },
     buildOverflowChips,
     buildChoiceCriteria,
+    perspectiveLabelsSignature,
+    savePerspectiveSettings,
     handleStorageOnChanged,
     saveApiKeySettings,
     isAiEligibleUrl,

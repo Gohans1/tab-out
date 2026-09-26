@@ -112,6 +112,7 @@ const JEV_MAX_BATCH = 24;
 const JEV_BATCH_CHAR_BUDGET = 48000;
 const AI_BASE_COOLDOWN_MS = 15000;
 const AI_MAX_COOLDOWN_MS = 60 * 60 * 1000;
+const JEV_MAX_BREAKER_MS = 15 * 60 * 1000;
 const CLASSIFICATION_CACHE_MAX = 1000;
 const MAX_CACHE_KEY_LENGTH = 2048;
 const AI_SOURCES = ['ai', 'ai-low-confidence'];
@@ -119,11 +120,14 @@ const AI_SOURCES = ['ai', 'ai-low-confidence'];
 const jevInFlight = new Set();
 let jevQueue = Promise.resolve();
 let jevBlockedUntil = 0;
+// Consecutive failures of the endpoint itself; each one doubles how long the breaker holds.
+let jevFailStreak = 0;
 
 function _resetJevWorkerForTesting() {
   jevInFlight.clear();
   jevQueue = Promise.resolve();
   jevBlockedUntil = 0;
+  jevFailStreak = 0;
 }
 
 const partitionKey = pid => `tabClassificationCache_${pid}`;
@@ -151,12 +155,26 @@ function nextAiBackoff(prevEntry, baseMs) {
   return { aiAttempts, cooldownMs: Math.min(baseMs * 2 ** (aiAttempts - 1), AI_MAX_COOLDOWN_MS) };
 }
 
-// Fingerprint of a perspective's tags; null when the perspective no longer exists.
+// Same pattern as isFallbackLabel() in app.js.
+const FALLBACK_TAG_REGEX = /^(khác|other|misc|linh tinh|chưa phân loại)(\s*[\/\(\-]\s*(chưa phân loại|unclassified|other|khác|misc|tổng hợp)\)?)?$/iu;
+
+// What a perspective's answers depend on: its tags' names and descriptions, ignoring order, case and
+// the fallback tag. app.js has the same function and wipes a partition only when it changes.
+function perspectiveLabelsSignature(perspective) {
+  const labels = Array.isArray(perspective?.labels) ? perspective.labels : [];
+  return labels
+    .map(l => (typeof l === 'string' ? { name: l } : l || {}))
+    .map(l => [typeof l.name === 'string' ? l.name.trim() : '', typeof l.description === 'string' ? l.description.trim() : ''])
+    .filter(([name]) => name && !FALLBACK_TAG_REGEX.test(name))
+    .map(([name, desc]) => `${name.toLowerCase()}::${desc.toLowerCase()}`)
+    .sort()
+    .join('|');
+}
+
+// Fingerprint of a stored perspective's tags; null when the perspective no longer exists.
 function labelsSignature(perspectives, pid) {
   const p = Array.isArray(perspectives) ? perspectives.find(x => x && typeof x === 'object' && x.id === pid) : null;
-  if (!p) return null;
-  return JSON.stringify((Array.isArray(p.labels) ? p.labels : []).map(l =>
-    typeof l === 'string' ? [l, ''] : [l?.name || '', l?.description || '']));
+  return p ? perspectiveLabelsSignature(p) : null;
 }
 
 function readPartition(raw) {
@@ -242,16 +260,32 @@ async function saveClassificationCacheAtomic(pid, newEntries, { labelsSig = null
 
 async function readBlockedUntil() {
   try {
-    const res = await chrome.storage.session?.get(['jevBlockedUntil']);
+    const res = await chrome.storage.session?.get(['jevBlockedUntil', 'jevFailStreak']);
     jevBlockedUntil = Math.max(jevBlockedUntil, Number(res?.jevBlockedUntil) || 0);
+    jevFailStreak = Math.max(jevFailStreak, Number(res?.jevFailStreak) || 0);
   } catch {}
   return jevBlockedUntil;
 }
 
+function saveBreaker() {
+  try { chrome.storage.session?.set({ jevBlockedUntil, jevFailStreak })?.catch?.(() => {}); } catch {}
+}
+
 // One breaker for every tab and dashboard; kept in session storage to outlive a worker restart.
-function blockJev(ms) {
+// A Retry-After is followed as given; otherwise each consecutive failure doubles the hold (capped
+// at 15 min), so an outage costs a handful of requests instead of one every 15s.
+function blockJev(minMs, fromRetryAfter = false) {
+  jevFailStreak++;
+  const escalated = Math.min(AI_BASE_COOLDOWN_MS * 2 ** (jevFailStreak - 1), JEV_MAX_BREAKER_MS);
+  const ms = fromRetryAfter ? minMs : Math.max(minMs, escalated);
   jevBlockedUntil = Math.max(jevBlockedUntil, Date.now() + ms);
-  try { chrome.storage.session?.set({ jevBlockedUntil })?.catch?.(() => {}); } catch {}
+  saveBreaker();
+}
+
+function clearFailStreak() {
+  if (!jevFailStreak) return;
+  jevFailStreak = 0;
+  saveBreaker();
 }
 
 async function blockAuth(requestKey) {
@@ -362,6 +396,7 @@ async function askJev(batch, job, cache) {
   }
 
   if (response.ok) {
+    clearFailStreak();
     const answers = data && typeof data === 'object' && data.answers && typeof data.answers === 'object' ? data.answers : {};
     return { entries: answerEntries(batch, answers, job.criteria, cache), stop: false };
   }
@@ -373,14 +408,15 @@ async function askJev(batch, job, cache) {
     cooldownMs = Math.min(Math.max(retryAfter * 1000, 5000), 300000);
   } else if ([401, 403, 429, 529].includes(status)) {
     cooldownMs = 60000;
-  } else if ([400, 402, 422].includes(status)) {
+  } else if ([400, 402, 404, 405, 410, 422].includes(status)) {
     cooldownMs = 300000;
   }
   const authFailed = [401, 402, 403].includes(status);
-  const endpointDown = status === 429 || status >= 500;
+  // 400/413/422 can come from one batch's content; a missing or timed-out endpoint fails every batch.
+  const endpointDown = status === 429 || status >= 500 || [404, 405, 408, 410].includes(status);
   console.warn(`[tab-out] Jev request failed: HTTP ${status}`);
   if (authFailed) await blockAuth(job.apiKey);
-  if (endpointDown) blockJev(cooldownMs);
+  if (endpointDown) blockJev(cooldownMs, retryAfter > 0);
   return {
     entries: failedEntries(batch, cache, cooldownMs, authFailed ? job.otherLabel : null),
     stop: authFailed || endpointDown
@@ -407,7 +443,9 @@ async function runJevJob(job) {
     const store = await chrome.storage.local.get([partitionKey(pid), 'perspectives', 'activePerspectiveId', 'aiAuthBlocked']);
     if (store.aiAuthBlocked === true) break;
     const sig = labelsSignature(store.perspectives, pid);
-    if (Array.isArray(store.perspectives) && sig === null) break;
+    // A deleted perspective, or tags edited since the dashboard built this job's criteria: the
+    // answers would file tabs under tags the user no longer has.
+    if (Array.isArray(store.perspectives) && (sig === null || (job.labelsSig !== null && sig !== job.labelsSig))) break;
     if (b === 0) labelsSig = sig;
     else if (sig !== labelsSig) break;
     // Strict on-demand: the batch in flight may finish, but no new one starts for a perspective the user left.
@@ -467,13 +505,15 @@ function parseJevJob(m) {
   const keepKeys = Array.isArray(m.keepKeys)
     ? m.keepKeys.filter(k => typeof k === 'string' && !isDangerousKey(k)).slice(0, 5000)
     : [];
-  return { pid, apiKey, criteria, otherLabel: clip(m.otherLabel, 50) || 'Other', items, keepKeys };
+  const labelsSig = typeof m.labelsSig === 'string' ? m.labelsSig : null;
+  return { pid, apiKey, criteria, otherLabel: clip(m.otherLabel, 50) || 'Other', items, keepKeys, labelsSig };
 }
 
 // A new API key deserves a real retry: drop the breaker and every stored failure cooldown.
 async function resetJevCooldowns() {
   jevBlockedUntil = 0;
-  try { await chrome.storage.session?.set({ jevBlockedUntil: 0 }); } catch {}
+  jevFailStreak = 0;
+  try { await chrome.storage.session?.set({ jevBlockedUntil: 0, jevFailStreak: 0 }); } catch {}
   try {
     const { perspectives } = await chrome.storage.local.get(['perspectives']);
     const keys = (Array.isArray(perspectives) ? perspectives : [])
@@ -664,6 +704,7 @@ if (typeof module !== 'undefined' && module.exports) {
     setupContextMenus,
     handleContextMenuClick,
     isRealTabUrl,
+    perspectiveLabelsSignature,
     _resetJevWorkerForTesting
   };
 }

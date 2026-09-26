@@ -235,6 +235,170 @@ describe("triggerBackgroundClassification — strictly on-demand", () => {
   });
 });
 
+describe("triggerBackgroundClassification — a queued run never uses stale data", () => {
+  // Fake Jev whose answers are held back until `release()` is called.
+  function installGatedFetch() {
+    const requests: any[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => { release = r; });
+    (globalThis as any).fetch = async (_u: string, init: any) => {
+      const body = JSON.parse(init.body);
+      requests.push(body);
+      await gate;
+      const answers: Record<string, any> = {};
+      for (const k of Object.keys(body.questions)) answers[k] = { choice: "Other", confidence: 0.9 };
+      return new Response(JSON.stringify({ answers }), { status: 200 });
+    };
+    return { requests, release: () => release() };
+  }
+
+  test("a run queued before the user edited the tags asks Jev with the edited tags", async () => {
+    const store: Record<string, any> = { perspectives: [pA, pB] };
+    installChrome(store);
+    const { requests, release } = installGatedFetch();
+    const edited = { ...pA, labels: [{ name: "Reading" }, { name: "Other" }] };
+
+    app.triggerBackgroundClassification([{ id: 1, url: "https://a.com/1", title: "a", status: "complete" }], pA);
+    await flush(3);
+    app.triggerBackgroundClassification([{ id: 2, url: "https://b.com/1", title: "b", status: "complete" }], pA);
+    store.perspectives = [edited, pB];
+    app.currentPerspectives = [{ id: "domain", name: "Domain", isSystem: true }, edited, pB];
+    release();
+    await flush(40);
+
+    expect(requests.length).toBe(2);
+    expect(Object.keys(requests[1].questions.tab_0.criteria)).toContain("Reading");
+  });
+
+  test("tabs whose answers were dropped because the tags were edited mid-run are asked again with the new tags", async () => {
+    const store: Record<string, any> = { perspectives: [pA, pB] };
+    installChrome(store);
+    const tab = { id: 1, url: "https://a.com/1", title: "a", windowId: 1, status: "complete" };
+    (globalThis as any).chrome.tabs = { query: async () => [tab] };
+    (globalThis as any).document = { hidden: false, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] };
+    await app.renderStaticDashboard({ skipBackgroundAi: true });
+    const { requests, release } = installGatedFetch();
+    const edited = { ...pA, labels: [{ name: "Reading" }, { name: "Other" }] };
+
+    app.triggerBackgroundClassification([tab], pA);
+    await flush(3);
+    store.perspectives = [edited, pB];
+    app.currentPerspectives = [{ id: "domain", name: "Domain", isSystem: true }, edited, pB];
+    release();
+    await flush(40);
+
+    expect(requests.length).toBe(2);
+    expect(requests[1].state.tabs.tab_0.url).toBe("https://a.com/1");
+    expect(Object.keys(requests[1].questions.tab_0.criteria)).toContain("Reading");
+  });
+
+  test("a queued tab that navigated meanwhile is asked for its new page", async () => {
+    installChrome({ perspectives: [pA, pB] });
+    const { requests, release } = installGatedFetch();
+
+    app.triggerBackgroundClassification([{ id: 1, url: "https://a.com/1", title: "a", status: "complete" }], pA);
+    await flush(3);
+    app.triggerBackgroundClassification([{ id: 2, url: "https://b.com/old", title: "old", status: "complete" }], pA);
+    app.triggerBackgroundClassification([{ id: 2, url: "https://b.com/new", title: "new", status: "complete" }], pA);
+    release();
+    await flush(40);
+
+    expect(requests.length).toBe(2);
+    expect(requests[1].state.tabs.tab_0.url).toBe("https://b.com/new");
+  });
+});
+
+describe("classifyTabs — more unclassified tabs than one job may carry", () => {
+  test("the first 1000 are still sent instead of the whole job being refused", async () => {
+    installChrome({ perspectives: [pA, pB] });
+    const requests = installFetch();
+    const tabs = Array.from({ length: 1001 }, (_, i) => ({ id: i + 1, url: `https://s${i}.com/p`, title: `S${i}`, status: "complete" }));
+
+    await app.classifyTabs(tabs, pA, { silent: true });
+
+    expect(requests.reduce((n, b) => n + Object.keys(b.questions).length, 0)).toBe(1000);
+  });
+});
+
+describe("renderStaticDashboard — classification resumes by itself once Jev is unblocked", () => {
+  test("the dashboard asks again when the block expires, without any tab event", async () => {
+    installChrome({ perspectives: [pA, pB] });
+    const tab = { id: 1, url: "https://a.com/1", title: "A", windowId: 1, status: "complete" };
+    (globalThis as any).chrome.tabs = { query: async () => [tab] };
+    (globalThis as any).document = { hidden: false, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] };
+    const messages: any[] = [];
+    (globalThis as any).chrome.runtime.sendMessage = async (m: any) => {
+      messages.push(m);
+      return messages.length === 1
+        ? { entries: {}, blockedUntil: Date.now() + 30 }
+        : { entries: { "https://a.com/1": { label: "Dev", source: "ai", confidence: 0.9, timestamp: 1 } }, blockedUntil: 0 };
+    };
+
+    await app.renderStaticDashboard();
+    await new Promise(r => setTimeout(r, 500));
+
+    expect(messages.length).toBe(2);
+  });
+});
+
+describe("savePerspectiveSettings — edited tags never resurrect wiped answers", () => {
+  test("a Jev answer landing while the edited tags are saved is not stored under them", async () => {
+    const store: Record<string, any> = { perspectives: [pA, pB], activePerspectiveId: "pA" };
+    installChrome(store);
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => { release = r; });
+    (globalThis as any).fetch = async () => {
+      await gate;
+      return new Response(JSON.stringify({ answers: { tab_0: { choice: "Dev", confidence: 0.9 } } }), { status: 200 });
+    };
+    // The answer lands exactly while the old partition is being wiped.
+    (globalThis as any).chrome.storage.local.remove = async (keys: any) => {
+      for (const k of [].concat(keys)) delete store[k];
+      release();
+      await flush();
+    };
+    const classifying = app.classifyTabs([{ id: 1, url: "https://a.com/1", title: "a", status: "complete" }], pA, { silent: true });
+    await flush(3);
+    const edited = { ...pA, labels: [{ name: "Reading" }, { name: "Other" }] };
+    app.currentPerspectives = [{ id: "domain", name: "Domain", isSystem: true }, edited, pB];
+
+    await app.savePerspectiveSettings("pA");
+    await classifying;
+
+    expect(store.tabClassificationCache_pA).toBeUndefined();
+    expect(store.perspectives.find((p: any) => p.id === "pA").labels[0].name).toBe("Reading");
+  });
+});
+
+describe("handleStorageOnChanged — wiped answers are replaced at once", () => {
+  test("a visible dashboard re-asks Jev when another tab wipes the shown perspective's answers", async () => {
+    installChrome({ perspectives: [pA, pB] });
+    const tab = { id: 1, url: "https://a.com/1", title: "A", windowId: 1, status: "complete" };
+    (globalThis as any).chrome.tabs = { query: async () => [tab] };
+    (globalThis as any).document = { hidden: false, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] };
+    const old = { "https://a.com/1": { label: "Dev", source: "ai", confidence: 0.9, timestamp: 1 } };
+    app.tabClassificationCache = { pA: structuredClone(old) };
+    await app.renderStaticDashboard({ skipBackgroundAi: true });
+    const requests = installFetch();
+
+    await app.handleStorageOnChanged({ tabClassificationCache_pA: { oldValue: old, newValue: undefined } }, "local");
+    await flush();
+
+    expect(requests.length).toBe(1);
+  });
+});
+
+describe("handleStorageOnChanged — a rewrite of identical perspectives does no work", () => {
+  test("a visible dashboard does not reload settings when the stored perspectives did not change", async () => {
+    const reads = installChrome({ perspectives: [pA, pB] });
+    (globalThis as any).document = { hidden: false, getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] };
+
+    await app.handleStorageOnChanged({ perspectives: { oldValue: [pA, pB], newValue: structuredClone([pA, pB]) } }, "local");
+
+    expect(reads.length).toBe(0);
+  });
+});
+
 describe("switchPerspective — keeps answers already paid for", () => {
   test("an in-flight Jev request still lands in the cache after switching away", async () => {
     installChrome({ perspectives: [pA, pB] });

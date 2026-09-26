@@ -175,6 +175,78 @@ describe("Jev worker — one breaker for every tab and dashboard", () => {
     expect(requests.length).toBe(0);
   });
 
+  test("a Retry-After shorter than the base delay is followed as the server gave it", async () => {
+    Date.now = () => 1_000_000;
+    installChrome({ perspectives: [pA] });
+    installFetch(() => new Response("{}", { status: 429, headers: { "retry-after": "5" } }));
+
+    const res = await ask(job("pA", ["https://a.com/1"]));
+
+    expect(res.blockedUntil).toBe(1_000_000 + 5_000);
+  });
+
+  test("consecutive network failures hold Jev back longer each time", async () => {
+    let now = 1_000_000;
+    Date.now = () => now;
+    installChrome({ perspectives: [pA] });
+    const requests = installFetch(() => { throw new TypeError("Failed to fetch"); });
+
+    await ask(job("pA", ["https://a.com/1"])); // 1st failure
+    now += 16_000;
+    await ask(job("pA", ["https://b.com/1"])); // 2nd failure in a row
+    now += 16_000;
+    await ask(job("pA", ["https://c.com/1"])); // must still be held back
+
+    expect(requests.length).toBe(2);
+  });
+
+  test("consecutive 5xx answers without Retry-After hold Jev back longer each time", async () => {
+    let now = 1_000_000;
+    Date.now = () => now;
+    installChrome({ perspectives: [pA] });
+    const requests = installFetch(() => new Response("{}", { status: 503 }));
+
+    await ask(job("pA", ["https://a.com/1"]));
+    now += 16_000;
+    await ask(job("pA", ["https://b.com/1"]));
+    now += 16_000;
+    await ask(job("pA", ["https://c.com/1"]));
+
+    expect(requests.length).toBe(2);
+  });
+
+  test("one good answer brings the hold-back after the next failure down to the base delay", async () => {
+    let now = 1_000_000;
+    Date.now = () => now;
+    installChrome({ perspectives: [pA] });
+    const requests = installFetch((_b, n) => n === 3
+      ? new Response(JSON.stringify({ answers: { tab_0: { choice: "Dev", confidence: 0.9 } } }), { status: 200 })
+      : new Response("{}", { status: 503 }));
+
+    await ask(job("pA", ["https://a.com/1"])); // fail → 15s
+    now += 16_000;
+    await ask(job("pA", ["https://b.com/1"])); // fail → 30s
+    now += 31_000;
+    await ask(job("pA", ["https://c.com/1"])); // success
+    await ask(job("pA", ["https://d.com/1"])); // fail → back to 15s
+    now += 16_000;
+    await ask(job("pA", ["https://e.com/1"]));
+
+    expect(requests.length).toBe(5);
+  });
+
+  test("an endpoint that answers 404 stops the remaining batches and holds Jev back", async () => {
+    Date.now = () => 1_000_000;
+    installChrome({ perspectives: [pA] });
+    const requests = installFetch(() => new Response("{}", { status: 404 }));
+    const urls = Array.from({ length: 30 }, (_, i) => `https://site${i}.com/p`);
+
+    await ask(job("pA", urls));
+    await ask(job("pA", ["https://other.com/1"]));
+
+    expect(requests.length).toBe(1);
+  });
+
   test("a 401 blocks AI for that key and stops the remaining batches", async () => {
     const store: Record<string, any> = { perspectives: [pA], openRouterApiKey: "sk-test" };
     installChrome(store);
@@ -228,6 +300,42 @@ describe("Jev worker — never stores answers the user no longer wants", () => {
     await pending;
 
     expect(store.tabClassificationCache_pA?.["https://a.com/1"]).toBeUndefined();
+  });
+
+  test("a job asked with tags that no longer match the stored ones is neither sent nor stored", async () => {
+    const edited = { ...pA, labels: [{ name: "Reading" }, { name: "Other" }] };
+    const store: Record<string, any> = { perspectives: [edited] };
+    installChrome(store);
+    const requests = installFetch();
+
+    await ask(job("pA", ["https://a.com/1"], { labelsSig: bg.perspectiveLabelsSignature(pA) }));
+
+    expect(requests.length).toBe(0);
+    expect(store.tabClassificationCache_pA).toBeUndefined();
+  });
+
+  test("a job asked with the stored tags goes out and is saved", async () => {
+    const store: Record<string, any> = { perspectives: [pA] };
+    installChrome(store);
+    const requests = installFetch();
+
+    await ask(job("pA", ["https://a.com/1"], { labelsSig: bg.perspectiveLabelsSignature(pA) }));
+
+    expect(requests.length).toBe(1);
+    expect(store.tabClassificationCache_pA["https://a.com/1"].source).toBe("ai");
+  });
+
+  test("answers survive the user only reordering tags mid-request", async () => {
+    const store: Record<string, any> = { perspectives: [pA] };
+    installChrome(store);
+    installFetch(() => {
+      store.perspectives = [{ ...pA, labels: [{ name: "Other" }, { name: "Dev" }] }];
+      return new Response(JSON.stringify({ answers: { tab_0: { choice: "Dev", confidence: 0.9 } } }), { status: 200 });
+    });
+
+    await ask(job("pA", ["https://a.com/1"], { labelsSig: bg.perspectiveLabelsSignature(pA) }));
+
+    expect(store.tabClassificationCache_pA["https://a.com/1"].source).toBe("ai");
   });
 
   test("answers for a perspective deleted mid-request are thrown away", async () => {
